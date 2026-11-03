@@ -1,0 +1,227 @@
+html,
+body {
+  background: #0b1e42;
+  font-family:
+    Roboto,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: #f8f8f8;
+  -webkit-font-smoothing: antialiased;
+}
+
+.o-legend-panel,
+.o-legend-panel .o-legend-content,
+.o-country-modal,
+.o-country-modal-backdrop,
+.o-maplibre-popup {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: #f8f8f8;
+}
+
+.o-legend-content label.o-legend-filter-row,
+.o-legend-filter-row-label,
+.o-legend-country-name {
+  font-size: 14px;
+  font-weight: 400;
+  color: #f8f8f8;
+}
+
+.o-legend-group-header {
+  font-family: inherit;
+}
+
+.o-legend-swatch--ship .o-legend-swatch-img {
+  max-width: 28px;
+  max-height: 16px;
+  width: auto;
+  height: auto;
+}
+
+.o-legend-swatch--ship .o-network-picto {
+  width: 22px;
+  height: 22px;
+}
+
+/* MapLibre container — same navy surround as Esri #viewDiv / globe */
+#mapShell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background-color: #0b1e42;
+  transition:
+    margin-left 0.32s ease,
+    width 0.32s ease;
+}
+
+#map {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background-color: #0b1e42;
+  font-family: inherit;
+}
+
+#map .maplibregl-canvas-container,
+#map .maplibregl-canvas {
+  background-color: #0b1e42;
+}
+
+@media (min-width: 640px) {
+  body.menu-open #mapShell {
+    margin-left: var(--legend-panel-width);
+    width: calc(100% - var(--legend-panel-width));
+  }
+}
+
+/**
+ * Esri View.UI positions .esri-ui-top-left absolutely; we mount the same stack on
+ * #map without Esri, so we must anchor it ourselves (otherwise flex + align-items
+ * center lays controls across the top of the viewport).
+ */
+.o-maplibre-ui-top-left {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.o-maplibre-ui-top-left > .esri-component,
+.o-maplibre-ui-top-left > .o-map-display-menu {
+  pointer-events: auto;
+}
+
+.o-maplibre-ui-top-left > .esri-component {
+  margin-bottom: 0 !important;
+}
+
+#map .maplibregl-ctrl-top-left:empty {
+  display: none;
+}
+
+.o-maplibre-nav .maplibregl-ctrl-group,
+.o-maplibre-nav.maplibregl-ctrl-group {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 8px !important;
+  float: none !important;
+}
+
+.o-maplibre-nav .maplibregl-ctrl-group button,
+.o-maplibre-compass .maplibregl-ctrl-compass {
+  width: 46px !important;
+  height: 46px !important;
+  background-color: #0b1e42 !important;
+  border: 1px solid #e0e0e0 !important;
+  border-radius: 50% !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  filter: none !important;
+}
+
+.o-maplibre-nav .maplibregl-ctrl-group button:hover,
+.o-maplibre-compass .maplibregl-ctrl-compass:hover {
+  opacity: 0.85;
+}
+
+.o-maplibre-nav .maplibregl-ctrl-group button:active,
+.o-maplibre-compass .maplibregl-ctrl-compass:active {
+  transform: scale(0.95);
+}
+
+.o-maplibre-nav .maplibregl-ctrl-compass-arrow {
+  filter: brightness(0) invert(1);
+}
+
+.o-maplibre-nav .maplibregl-ctrl-icon {
+  filter: brightness(0) invert(1);
+}
+
+.o-maplibre-compass {
+  display: flex;
+  justify-content: center;
+  width: 72px;
+}
+
+.o-map-toolbar-hint-wrap.esri-widget--button {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background-color: #0b1e42;
+  border: 1px solid #e0e0e0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.o-maplibre-nav .maplibregl-ctrl-group .o-map-toolbar-hint-wrap > button {
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  background-color: transparent !important;
+  border-radius: 50% !important;
+  padding: 0 !important;
+}
+
+.o-map-toolbar-hint-wrap.esri-widget--button .maplibregl-ctrl-icon {
+  display: block;
+  width: 29px;
+  height: 29px;
+  margin: 0 auto;
+  border: none !important;
+  box-shadow: none !important;
+  background-color: transparent !important;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  filter: brightness(0) invert(1);
+}
+
+.o-basemap-kind-label,
+.o-map-display-menu,
+.o-legend-toggle__hint,
+.o-map-toolbar-hint {
+  font-family: inherit;
+  font-weight: 500;
+}
+
+.maplibregl-ctrl-bottom-right,
+.maplibregl-ctrl-bottom-left {
+  z-index: 1;
+}
+
+.maplibregl-ctrl-attrib,
+.maplibregl-compact-show {
+  display: none !important;
+}
+
+@media (max-height: 700px) {
+  .o-maplibre-nav .maplibregl-ctrl-group button,
+  .o-maplibre-compass .maplibregl-ctrl-compass,
+  .o-map-toolbar-hint-wrap.esri-widget--button {
+    width: 40px !important;
+    height: 40px !important;
+  }
+}

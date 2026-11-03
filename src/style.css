@@ -1,0 +1,292 @@
+:root {
+  --legend-panel-width: 550px;
+  --legend-padding: 20px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  font-family:
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    sans-serif;
+  background: #0b1e42;
+}
+
+#mapShell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition:
+    margin-left 0.32s ease,
+    width 0.32s ease;
+}
+
+#map {
+  width: 100%;
+  height: 100%;
+}
+
+@media (min-width: 640px) {
+  body.menu-open #mapShell {
+    margin-left: var(--legend-panel-width);
+    width: calc(100% - var(--legend-panel-width));
+  }
+}
+
+/* —— Menu toggle (report card / simple-map pattern) —— */
+.o-legend-toggle {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(11, 30, 66, 0.92);
+  color: #f8f8f8;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.o-legend-toggle:hover {
+  background: #12336e;
+}
+
+.o-legend-toggle.is-open {
+  background: #f48b25;
+  color: #0b1e42;
+}
+
+.o-legend-toggle__icon {
+  display: flex;
+}
+
+/* —— Basemap stack (bottom-left) —— */
+.o-map-display-menu {
+  position: absolute;
+  left: 12px;
+  bottom: 28px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.o-map-display-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.o-basemap-preview-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.o-basemap-preview-btn.is-active .o-basemap-preview {
+  border-color: #f48b25;
+  box-shadow: 0 0 0 2px rgba(244, 139, 37, 0.45);
+}
+
+.o-basemap-preview {
+  width: 56px;
+  height: 56px;
+  border-radius: 4px;
+  background-size: cover;
+  background-position: center;
+  border: 2px solid #f8f8f8;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+}
+
+.o-basemap-kind-label {
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(248, 248, 248, 0.92);
+  text-align: center;
+  max-width: 72px;
+  line-height: 1.2;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* —— Legend panel —— */
+.o-legend-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 999;
+}
+
+.o-legend-backdrop.open {
+  display: block;
+}
+
+@media (min-width: 640px) {
+  .o-legend-backdrop.open {
+    display: none;
+  }
+}
+
+.o-legend-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  max-width: var(--legend-panel-width);
+  height: 100dvh;
+  background: #12336e;
+  color: #f8f8f8;
+  transform: translateX(-100%);
+  transition: transform 0.3s ease;
+  z-index: 1000;
+  overflow-y: auto;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.2);
+}
+
+.o-legend-panel.open {
+  transform: translateX(0);
+}
+
+.o-legend-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: var(--legend-padding);
+  padding-bottom: 8px;
+}
+
+.o-legend-logo {
+  width: 120px;
+  height: auto;
+  display: block;
+}
+
+.o-legend-title h4 {
+  margin: 12px 0 0;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.o-legend-close {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.o-legend-close:hover {
+  background: #0b1e42;
+}
+
+.o-legend-list {
+  padding: 0 var(--legend-padding) 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.o-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.o-legend-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.o-legend-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: #f48b25;
+}
+
+.o-legend-row__label {
+  flex: 1;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.o-legend-row__img {
+  width: 22px;
+  height: auto;
+}
+
+.o-legend-row__line {
+  width: 28px;
+  height: 4px;
+  border-radius: 2px;
+  display: block;
+}
+
+.o-legend-row__point {
+  width: 12px;
+  height: 12px;
+  display: block;
+  border: 1px solid #111;
+}
+
+.o-legend-projection {
+  padding: 8px var(--legend-padding) 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  margin-top: 8px;
+}
+
+.o-legend-projection label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.o-legend-projection select {
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+}
+
+.o-legend-note {
+  padding: 12px var(--legend-padding) 24px;
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.75;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.maplibregl-ctrl-top-left {
+  top: 12px;
+  left: 12px;
+}
+
+@media (max-width: 639px) {
+  body.menu-open {
+    overflow: hidden;
+  }
+}
