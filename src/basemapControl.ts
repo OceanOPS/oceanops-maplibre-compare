@@ -1,4 +1,5 @@
 import type { BasemapKind } from "./basemap";
+import { assetUrl } from "./assetUrl";
 
 export function mountBasemapControl(
   onChange: (kind: BasemapKind) => void,
@@ -15,13 +16,13 @@ export function mountBasemapControl(
   mapBtn.type = "button";
   mapBtn.className = "o-basemap-preview-btn";
   mapBtn.title = "Ocean basemap";
-  mapBtn.innerHTML = `<div class="o-basemap-preview o-basemap-preview--map" style="background-image:url('/img/map.jpeg')"></div>`;
+  mapBtn.innerHTML = `<div class="o-basemap-preview o-basemap-preview--map" style="background-image:url('${assetUrl("/img/map.jpeg")}')"></div>`;
 
   const satBtn = document.createElement("button");
   satBtn.type = "button";
   satBtn.className = "o-basemap-preview-btn";
   satBtn.title = "Satellite basemap";
-  satBtn.innerHTML = `<div class="o-basemap-preview" style="background-image:url('/img/satelite.jpeg')"></div>`;
+  satBtn.innerHTML = `<div class="o-basemap-preview" style="background-image:url('${assetUrl("/img/satelite.jpeg")}')"></div>`;
 
   const mapLabel = document.createElement("span");
   mapLabel.className = "o-basemap-kind-label";

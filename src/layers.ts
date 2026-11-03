@@ -21,12 +21,9 @@ export type MapProjectionMode = "globe" | "mercator";
 
 function lineGeoJsonUrl(id: string, projection: MapProjectionMode): string {
   if (LINE_LAYER_IDS.has(id) && projection === "mercator") {
-    return `/geojson/${id}_undensified.geojson`;
+    return assetUrl(`/geojson/${id}_undensified.geojson`);
   }
-  if (LINE_LAYER_IDS.has(id)) {
-    return `/geojson/${id}.geojson`;
-  }
-  return `/geojson/${id}.geojson`;
+  return assetUrl(`/geojson/${id}.geojson`);
 }
 
 function pointRadius(cat: Category): number {
@@ -134,7 +131,7 @@ export async function addCategoryLayer(
     solo ??
     (cat.type === "line"
       ? lineGeoJsonUrl(cat.id, projection)
-      : `/geojson/${cat.id}.geojson`);
+      : assetUrl(`/geojson/${cat.id}.geojson`));
 
   const data = solo ? await fetchGeoJson(solo) : await fetchGeoJson(url);
   registerLayerGeoJson(

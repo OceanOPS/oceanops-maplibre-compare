@@ -3,6 +3,7 @@ import { appendToolbarHint, clearToolbarHint } from "./oceanops/mapToolbar";
 import { isMapFullscreen, setMapFullscreen } from "./oceanops/mapFullscreen";
 import type { BasemapKind } from "./basemap";
 import type { MapProjectionMode } from "./layers";
+import { assetUrl } from "./assetUrl";
 
 export type DisplayMenuOptions = {
   map: maplibregl.Map;
@@ -128,11 +129,11 @@ export function mountMapDisplayMenu(options: DisplayMenuOptions): HTMLDivElement
   const updateBasemapUi = () => {
     const kind = options.getBasemapKind();
     if (kind === "map") {
-      previewBtn.innerHTML = `<div class="o-basemap-preview" style="background-image:url('/img/satelite.jpeg')"></div>`;
+      previewBtn.innerHTML = `<div class="o-basemap-preview" style="background-image:url('${assetUrl("/img/satelite.jpeg")}')"></div>`;
       basemapHint.textContent = "Satellite layer";
       previewBtn.setAttribute("aria-label", "Switch to satellite layer");
     } else {
-      previewBtn.innerHTML = `<div class="o-basemap-preview" style="background-image:url('/img/map.jpeg')"></div>`;
+      previewBtn.innerHTML = `<div class="o-basemap-preview" style="background-image:url('${assetUrl("/img/map.jpeg")}')"></div>`;
       basemapHint.textContent = "Map layer";
       previewBtn.setAttribute("aria-label", "Switch to map layer");
     }
@@ -143,7 +144,7 @@ export function mountMapDisplayMenu(options: DisplayMenuOptions): HTMLDivElement
     const current = options.getProjection();
     const next: MapProjectionMode = current === "globe" ? "mercator" : "globe";
     const preview = projectionPreviewImage(next);
-    projectionPreviewBtn.innerHTML = `<div class="o-basemap-preview" style="background-image:url('/img/${preview}')"></div>`;
+    projectionPreviewBtn.innerHTML = `<div class="o-basemap-preview" style="background-image:url('${assetUrl(`/img/${preview}`)}')"></div>`;
     projectionHint.textContent = projectionLabel(next);
     projectionPreviewBtn.setAttribute("aria-label", `Switch to ${projectionLabel(next)}`);
     clearToolbarHint(projectionPreviewBtn);

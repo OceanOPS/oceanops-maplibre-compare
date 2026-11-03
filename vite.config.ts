@@ -3,11 +3,9 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
-const simpleMapPublic = path.resolve(root, "../oceanops-simple-map/public");
 
-/** Reuse GeoJSON + icons from oceanops-simple-map (no duplicate export). */
 export default defineConfig({
-  publicDir: simpleMapPublic,
+  publicDir: path.resolve(root, "public"),
   resolve: {
     alias: {
       "@arcgis/core/PopupTemplate.js": path.resolve(root, "src/stubs/arcgis-core.ts"),

@@ -25,6 +25,7 @@ import {
 } from "./categories";
 import type { CountryFilterController } from "./countryFilterController";
 import { createCollapsibleGroup } from "./legendCollapsible";
+import { assetUrl } from "./assetUrl";
 
 const MENU_TOGGLE_HINT = {
   closed: "Show map legend and contributing countries",
@@ -140,7 +141,7 @@ export function mountLegend(callbacks: LegendCallbacks): {
   content.innerHTML = `
     <div class="o-legend-header">
       <div class="o-legend-header-content">
-        <img src="/img/oceanops-w.png" alt="OceanOPS" class="o-legend-logo" />
+        <img src="${assetUrl("/img/oceanops-w.png")}" alt="OceanOPS" class="o-legend-logo" />
         <div class="o-legend-title"><h4>In Situ Networks as Monitored by OceanOPS</h4></div>
       </div>
       <button type="button" class="o-legend-close" aria-label="Close menu">
