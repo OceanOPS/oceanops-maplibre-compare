@@ -40,7 +40,9 @@ function setCategoryVisibility(cat: Category, visible: boolean): void {
 
 let projectionMode: MapProjectionMode = "globe";
 let basemapKind: BasemapKind = "map";
-let globeRotating = false;
+/** Match Esri SceneView: spin the globe by advancing camera longitude, not map bearing. */
+const GLOBE_LONGITUDE_STEP = 0.1;
+let globeRotating = true;
 let rotationFrame = 0;
 
 const map = new maplibregl.Map({
@@ -51,6 +53,7 @@ const map = new maplibregl.Map({
   pitch: 0,
   bearing: 0,
   attributionControl: false,
+  scrollZoom: false,
 });
 
 map.addControl(
@@ -87,9 +90,12 @@ mountGlobeRotationControl(toolbarHost, {
   isGlobe: () => projectionMode === "globe",
   isRotating: () => globeRotating,
   toggleRotation: () => {
-    globeRotating = !globeRotating;
-    if (globeRotating) startGlobeRotation();
-    else stopGlobeRotation();
+    if (projectionMode !== "globe") return;
+    if (globeRotating) stopGlobeRotation();
+    else {
+      globeRotating = true;
+      startGlobeRotation();
+    }
     rotationCallbacks.forEach((cb) => cb());
   },
   onRotationStateChange: (cb) => {
@@ -113,10 +119,21 @@ const displayMenu = mountMapDisplayMenu({
 displayMenu.classList.add("esri-component");
 toolbarHost.appendChild(displayMenu);
 
+function notifyRotationUi(): void {
+  rotationCallbacks.forEach((cb) => cb());
+}
+
 function startGlobeRotation(): void {
+  cancelAnimationFrame(rotationFrame);
   const step = () => {
     if (!globeRotating || projectionMode !== "globe") return;
-    map.setBearing(map.getBearing() + 0.15);
+    const center = map.getCenter();
+    map.jumpTo({
+      center: [center.lng + GLOBE_LONGITUDE_STEP, center.lat],
+      zoom: map.getZoom(),
+      bearing: map.getBearing(),
+      pitch: map.getPitch(),
+    });
     rotationFrame = requestAnimationFrame(step);
   };
   rotationFrame = requestAnimationFrame(step);
@@ -127,16 +144,33 @@ function stopGlobeRotation(): void {
   cancelAnimationFrame(rotationFrame);
 }
 
+function interruptGlobeRotationFromUser(): void {
+  if (!globeRotating) return;
+  stopGlobeRotation();
+  notifyRotationUi();
+}
+
+function bindGlobeRotationInterrupts(): void {
+  const stop = () => interruptGlobeRotationFromUser();
+  map.on("dragstart", stop);
+  map.on("rotatestart", stop);
+  map.on("pitchstart", stop);
+  map.on("zoomstart", stop);
+  map.on("dblclick", stop);
+}
+
 function applyProjection(mode: MapProjectionMode) {
   projectionMode = mode;
-  if (mode !== "globe") stopGlobeRotation();
   if (mode === "globe") {
     map.setProjection({ type: "globe" });
+    globeRotating = true;
+    startGlobeRotation();
   } else {
+    stopGlobeRotation();
     map.setProjection({ type: "mercator" });
   }
   void reloadLineLayers(map, mode);
-  rotationCallbacks.forEach((cb) => cb());
+  notifyRotationUi();
   (displayMenu as HTMLDivElement & { refresh?: () => void }).refresh?.();
 }
 
@@ -166,6 +200,7 @@ map.on("load", async () => {
   legendUi.refreshCounts();
 
   bindMapInteractions(map);
+  bindGlobeRotationInterrupts();
 });
 
 window.addEventListener("resize", () => map.resize());
