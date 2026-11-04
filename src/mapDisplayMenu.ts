@@ -3,11 +3,19 @@ import { appendToolbarHint, clearToolbarHint } from "./oceanops/mapToolbar";
 import { isMapFullscreen, setMapFullscreen } from "./oceanops/mapFullscreen";
 import type { BasemapKind } from "./basemap";
 import {
+  MAP_PROJECTION_CYCLE,
   mapProjectionLabel,
   nextMapProjection,
   type MapProjectionMode,
 } from "./layers";
 import { assetUrl } from "./assetUrl";
+import {
+  BASEMAP_KIND_CYCLE,
+  mountProjectionStepDots,
+  setBasemapPreviewContent,
+  setCycleOptionLabel,
+  updateProjectionStepDots,
+} from "./mapDisplayCycleUi";
 
 export type DisplayMenuOptions = {
   map: maplibregl.Map;
@@ -40,9 +48,10 @@ export function mountMapDisplayMenu(options: DisplayMenuOptions): HTMLDivElement
   const previewBtn = document.createElement("button");
   previewBtn.type = "button";
   previewBtn.className = "o-basemap-preview-btn";
+  const basemapSteps = mountProjectionStepDots(0, BASEMAP_KIND_CYCLE.length);
   const basemapHint = document.createElement("span");
   basemapHint.className = "o-basemap-kind-label";
-  basemapSection.append(previewBtn, basemapHint);
+  basemapSection.append(previewBtn, basemapSteps, basemapHint);
 
   const divider = document.createElement("div");
   divider.className = "o-map-display-divider";
@@ -53,9 +62,10 @@ export function mountMapDisplayMenu(options: DisplayMenuOptions): HTMLDivElement
   const projectionPreviewBtn = document.createElement("button");
   projectionPreviewBtn.type = "button";
   projectionPreviewBtn.className = "o-basemap-preview-btn";
+  const projectionSteps = mountProjectionStepDots(0, MAP_PROJECTION_CYCLE.length);
   const projectionHint = document.createElement("span");
   projectionHint.className = "o-basemap-kind-label";
-  projectionSection.append(projectionPreviewBtn, projectionHint);
+  projectionSection.append(projectionPreviewBtn, projectionSteps, projectionHint);
 
   const divider2 = document.createElement("div");
   divider2.className = "o-map-display-divider";
@@ -64,34 +74,35 @@ export function mountMapDisplayMenu(options: DisplayMenuOptions): HTMLDivElement
   const scrollWheelSection = document.createElement("div");
   scrollWheelSection.className =
     "o-map-display-section o-map-display-section--scroll-wheel";
-  const scrollWheelBtn = document.createElement("button");
-  scrollWheelBtn.type = "button";
-  scrollWheelBtn.className = "o-map-scroll-wheel-toggle";
-  const scrollWheelIcon = `
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="7" y="3" width="10" height="18" rx="5" stroke="currentColor" stroke-width="1.75"/>
-      <path d="M12 7v3" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
-      <path d="M9.5 10.5 12 8l2.5 2.5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>`;
+  const scrollWheelSwitch = document.createElement("button");
+  scrollWheelSwitch.type = "button";
+  scrollWheelSwitch.className = "o-map-scroll-wheel-switch";
+  scrollWheelSwitch.setAttribute("role", "switch");
+  scrollWheelSwitch.setAttribute("aria-checked", "false");
+  scrollWheelSwitch.setAttribute("aria-label", "Enable mouse wheel zoom");
+  scrollWheelSwitch.innerHTML = `<span class="o-map-scroll-wheel-switch__track" aria-hidden="true"><span class="o-map-scroll-wheel-switch__thumb"></span></span>`;
+
   const scrollWheelHint = document.createElement("span");
   scrollWheelHint.className = "o-basemap-kind-label";
   scrollWheelHint.textContent = "Scroll zoom";
 
   const syncScrollWheelUi = () => {
-    scrollWheelBtn.classList.toggle("is-active", scrollWheelZoomEnabled);
-    scrollWheelBtn.innerHTML = scrollWheelIcon;
-    scrollWheelBtn.setAttribute("aria-pressed", scrollWheelZoomEnabled ? "true" : "false");
+    scrollWheelSwitch.classList.toggle("is-on", scrollWheelZoomEnabled);
+    scrollWheelSwitch.setAttribute(
+      "aria-checked",
+      scrollWheelZoomEnabled ? "true" : "false"
+    );
     const label = scrollWheelZoomEnabled
       ? "Disable mouse wheel zoom"
       : "Enable mouse wheel zoom";
-    scrollWheelBtn.setAttribute("aria-label", label);
-    appendToolbarHint(scrollWheelBtn, label);
+    scrollWheelSwitch.setAttribute("aria-label", label);
+    appendToolbarHint(scrollWheelSwitch, label);
   };
 
-  scrollWheelBtn.addEventListener("click", () => {
+  scrollWheelSwitch.addEventListener("click", () => {
     applyScrollWheelZoom(options.map, !scrollWheelZoomEnabled);
     syncScrollWheelUi();
-    scrollWheelBtn.blur();
+    scrollWheelSwitch.blur();
   });
 
   applyScrollWheelZoom(options.map, false);
@@ -101,7 +112,7 @@ export function mountMapDisplayMenu(options: DisplayMenuOptions): HTMLDivElement
     applyScrollWheelZoom(options.map, scrollWheelZoomEnabled);
     syncScrollWheelUi();
   });
-  scrollWheelSection.append(scrollWheelBtn, scrollWheelHint);
+  scrollWheelSection.append(scrollWheelSwitch, scrollWheelHint);
 
   const divider3 = document.createElement("div");
   divider3.className = "o-map-display-divider";
@@ -145,23 +156,43 @@ export function mountMapDisplayMenu(options: DisplayMenuOptions): HTMLDivElement
 
   const updateBasemapUi = () => {
     const kind = options.getBasemapKind();
+    const basemapIndex = BASEMAP_KIND_CYCLE.indexOf(kind);
+    updateProjectionStepDots(
+      basemapSteps,
+      basemapIndex >= 0 ? basemapIndex : 0
+    );
     if (kind === "map") {
-      previewBtn.innerHTML = `<div class="o-basemap-preview" style="background-image:url('${assetUrl("/img/satelite.jpeg")}')"></div>`;
-      basemapHint.textContent = "Satellite layer";
+      setBasemapPreviewContent(
+        previewBtn,
+        `<div class="o-basemap-preview" style="background-image:url('${assetUrl("/img/map.jpeg")}')"></div>`
+      );
+      setCycleOptionLabel(basemapHint, "Map layer");
       previewBtn.setAttribute("aria-label", "Switch to satellite layer");
     } else {
-      previewBtn.innerHTML = `<div class="o-basemap-preview" style="background-image:url('${assetUrl("/img/map.jpeg")}')"></div>`;
-      basemapHint.textContent = "Map layer";
+      setBasemapPreviewContent(
+        previewBtn,
+        `<div class="o-basemap-preview" style="background-image:url('${assetUrl("/img/satelite.jpeg")}')"></div>`
+      );
+      setCycleOptionLabel(basemapHint, "Satellite layer");
       previewBtn.setAttribute("aria-label", "Switch to map layer");
     }
     clearToolbarHint(previewBtn);
   };
 
   const syncProjectionUi = () => {
-    const next = nextMapProjection(options.getProjection());
-    const preview = projectionPreviewImage(next);
-    projectionPreviewBtn.innerHTML = `<div class="o-basemap-preview" style="background-image:url('${assetUrl(`/img/${preview}`)}')"></div>`;
-    projectionHint.textContent = mapProjectionLabel(next);
+    const current = options.getProjection();
+    const currentIndex = MAP_PROJECTION_CYCLE.indexOf(current);
+    updateProjectionStepDots(
+      projectionSteps,
+      currentIndex >= 0 ? currentIndex : 0
+    );
+    const next = nextMapProjection(current);
+    const preview = projectionPreviewImage(current);
+    setBasemapPreviewContent(
+      projectionPreviewBtn,
+      `<div class="o-basemap-preview" style="background-image:url('${assetUrl(`/img/${preview}`)}')"></div>`
+    );
+    setCycleOptionLabel(projectionHint, mapProjectionLabel(current));
     projectionPreviewBtn.setAttribute(
       "aria-label",
       `Switch to ${mapProjectionLabel(next)}`
