@@ -12,6 +12,7 @@ import {
   loadAllCategories,
   reloadLineLayers,
   setCategoryVisible,
+  toProjectionId,
   type MapProjectionMode,
 } from "./layers";
 import { mountFloatingToolbar, mountGlobeRotationControl } from "./floatingToolbar";
@@ -20,9 +21,25 @@ import { bindMapInteractions } from "./mapInteractions";
 import { mountMapDisplayMenu } from "./mapDisplayMenu";
 import { createCountryFilterController } from "./countryFilterController";
 import {
+  createPlatformSearchBar,
+  mountPlatformSearch,
+  type PlatformSearchController,
+} from "./platformSearch";
+import {
   addMooringStackLayer,
   loadMooringStackData,
 } from "./mooringStackLayer";
+import {
+  bindFlatBasemapRefresh,
+  prefetchEqualEarthBasemaps,
+  syncBasemapModeForProjection,
+} from "./flatBasemapMapServer";
+import { setMapProjection } from "./mapProjectionState";
+import {
+  applyProjectionShellLayout,
+  applyProjectionViewConstraints,
+} from "./projectionLayout";
+import { is3dProjection } from "./projections";
 import "./mapPopupStyles.css";
 import "./maplibre-overrides.css";
 
@@ -108,16 +125,26 @@ const displayMenu = mountMapDisplayMenu({
   getBasemapKind: () => basemapKind,
   onBasemapKindChange: (kind) => {
     basemapKind = kind;
-    setBasemapKind(map, kind);
+    prefetchEqualEarthBasemaps(kind);
+    applyBasemapForCurrentProjection();
   },
   getProjection: () => projectionMode,
   onProjectionChange: async (mode) => {
-    applyProjection(mode);
+    await applyProjection(mode);
   },
   onShellLayoutChange,
 });
 displayMenu.classList.add("esri-component");
 toolbarHost.appendChild(displayMenu);
+
+let platformSearch: PlatformSearchController | null = null;
+const searchChrome = createPlatformSearchBar({
+  getSearch: () => platformSearch,
+});
+const searchWrap = document.createElement("div");
+searchWrap.className = "esri-component";
+searchWrap.appendChild(searchChrome.searchBar);
+toolbarHost.appendChild(searchWrap);
 
 function notifyRotationUi(): void {
   rotationCallbacks.forEach((cb) => cb());
@@ -152,6 +179,11 @@ function interruptGlobeRotationFromUser(): void {
 
 function bindGlobeRotationInterrupts(): void {
   const stop = () => interruptGlobeRotationFromUser();
+  // Stop on press so a click is not lost: rotation moves the camera between
+  // mousedown and mouseup, which otherwise cancels MapLibre's click.
+  map.on("mousedown", stop);
+  map.on("touchstart", stop);
+  map.on("click", stop);
   map.on("dragstart", stop);
   map.on("rotatestart", stop);
   map.on("pitchstart", stop);
@@ -159,33 +191,67 @@ function bindGlobeRotationInterrupts(): void {
   map.on("dblclick", stop);
 }
 
-function applyProjection(mode: MapProjectionMode) {
+const GLOBE_FOG = {
+  color: "#0b1e42",
+  "high-color": "#0b1e42",
+  "horizon-blend": 0.08,
+} as const;
+
+function applyGlobeFog(enabled: boolean): void {
+  if (!("setFog" in map) || typeof map.setFog !== "function") return;
+  map.setFog(enabled ? { ...GLOBE_FOG } : null);
+}
+
+function applyBasemapForCurrentProjection(): void {
+  const projection = toProjectionId(projectionMode);
+  if (is3dProjection(projection) || projectionMode === "mercator") {
+    setBasemapKind(map, basemapKind);
+  }
+  syncBasemapModeForProjection(map, projection, basemapKind);
+}
+
+async function applyProjection(mode: MapProjectionMode): Promise<void> {
+  const leavingEqualEarth = projectionMode === "equal-earth" && mode !== "equal-earth";
   projectionMode = mode;
+  const projection = toProjectionId(mode);
+  setMapProjection(projection);
+  applyProjectionShellLayout(projection);
+
   if (mode === "globe") {
+    applyGlobeFog(true);
     map.setProjection({ type: "globe" });
+    applyProjectionViewConstraints(map, projection, {
+      resetCamera: leavingEqualEarth,
+    });
     globeRotating = true;
     startGlobeRotation();
   } else {
     stopGlobeRotation();
+    applyGlobeFog(false);
     map.setProjection({ type: "mercator" });
+    applyProjectionViewConstraints(map, projection, {
+      resetCamera: leavingEqualEarth || mode === "equal-earth",
+    });
   }
-  void reloadLineLayers(map, mode);
+
+  applyBasemapForCurrentProjection();
+
+  if (countryFilter) {
+    await reloadLineLayers(map, mode);
+    countryFilter.apply();
+    platformSearch?.rebuild();
+  }
+
   notifyRotationUi();
   (displayMenu as HTMLDivElement & { refresh?: () => void }).refresh?.();
 }
 
 map.on("load", async () => {
   ensureBasemapSources(map);
+  bindFlatBasemapRefresh(map, () => basemapKind);
+  prefetchEqualEarthBasemaps(basemapKind);
   setBasemapKind(map, basemapKind);
-  applyProjection("globe");
-
-  if ("setFog" in map && typeof map.setFog === "function") {
-    map.setFog({
-      color: "#0b1e42",
-      "high-color": "#0b1e42",
-      "horizon-blend": 0.08,
-    });
-  }
+  await applyProjection("globe");
 
   const mooringData = await loadMooringStackData("/");
   await loadAllCategories(map, projectionMode, mooringData);
@@ -201,6 +267,18 @@ map.on("load", async () => {
 
   bindMapInteractions(map);
   bindGlobeRotationInterrupts();
+
+  const searchAnchor = document.getElementById("platform-search-anchor");
+  if (searchAnchor) {
+    platformSearch = mountPlatformSearch({
+      shell: searchAnchor,
+      map,
+      stopRotation: () => interruptGlobeRotationFromUser(),
+      getProjection: () => projectionMode,
+    });
+    platformSearch.setOpenChangeListener(searchChrome.syncSearchButton);
+    searchChrome.syncSearchButton();
+  }
 });
 
 window.addEventListener("resize", () => map.resize());

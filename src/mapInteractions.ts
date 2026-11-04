@@ -73,11 +73,20 @@ function pagesFromColocatedMembers(
   });
 }
 
+export async function openFeaturePopup(
+  map: maplibregl.Map,
+  feature: GeoJSON.Feature,
+  layerId: string,
+  lngLat: { lng: number; lat: number }
+): Promise<void> {
+  return popupForFeature(map, feature, layerId, lngLat);
+}
+
 async function popupForFeature(
   map: maplibregl.Map,
   feature: GeoJSON.Feature,
   layerId: string,
-  lngLat: maplibregl.LngLat
+  lngLat: { lng: number; lat: number }
 ): Promise<void> {
   const cat = categoryForLayerId(layerId);
   const attrs = propsFromFeature(feature);

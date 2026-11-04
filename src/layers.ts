@@ -8,19 +8,52 @@ import { moveBasemapBelowData } from "./basemap";
 import type { MooringStackData } from "./mooringStackLayer";
 import { mooringSoloUrl, refreshMooringStackLayer } from "./mooringStackLayer";
 import { registerLayerGeoJson } from "./geoJsonCountryFilter";
+import { collectionForMapDisplay } from "./geoProjection";
 import { assetUrl, iconIdFromAssetPath } from "./assetUrl";
 import {
   ensurePointMarkerImages,
   pointMarkerImageId,
 } from "./pointMarkerImages";
 import { pointMarkerIconSize, shipIconSize } from "./mapSymbolSize";
+import {
+  PROJECTION_3D_GLOBE,
+  PROJECTION_EQUAL_EARTH,
+  type ProjectionId,
+} from "./projections";
 
 const LINE_LAYER_IDS = new Set(["goship", "oceantrax"]);
 
-export type MapProjectionMode = "globe" | "mercator";
+export type MapProjectionMode = "globe" | "mercator" | "equal-earth";
+
+export const MAP_PROJECTION_CYCLE: readonly MapProjectionMode[] = [
+  "globe",
+  "mercator",
+  "equal-earth",
+];
+
+export function nextMapProjection(mode: MapProjectionMode): MapProjectionMode {
+  const index = MAP_PROJECTION_CYCLE.indexOf(mode);
+  return MAP_PROJECTION_CYCLE[(index + 1) % MAP_PROJECTION_CYCLE.length]!;
+}
+
+export function mapProjectionLabel(mode: MapProjectionMode): string {
+  switch (mode) {
+    case "globe":
+      return "3D Globe";
+    case "mercator":
+      return "Web Mercator";
+    case "equal-earth":
+      return "Equal Earth (150°W)";
+  }
+}
+
+/** Warp target for GeoJSON / MapServer — Web Mercator stays unwarped like the globe. */
+export function toProjectionId(mode: MapProjectionMode): ProjectionId {
+  return mode === "equal-earth" ? PROJECTION_EQUAL_EARTH : PROJECTION_3D_GLOBE;
+}
 
 function lineGeoJsonUrl(id: string, projection: MapProjectionMode): string {
-  if (LINE_LAYER_IDS.has(id) && projection === "mercator") {
+  if (LINE_LAYER_IDS.has(id) && projection !== "globe") {
     return assetUrl(`/geojson/${id}_undensified.geojson`);
   }
   return assetUrl(`/geojson/${id}.geojson`);
@@ -138,10 +171,11 @@ export async function addCategoryLayer(
     cat.id,
     JSON.parse(JSON.stringify(data)) as GeoJSON.FeatureCollection
   );
+  const display = collectionForMapDisplay(data);
   if (map.getSource(sourceId)) {
-    (map.getSource(sourceId) as maplibregl.GeoJSONSource).setData(data);
+    (map.getSource(sourceId) as maplibregl.GeoJSONSource).setData(display);
   } else {
-    map.addSource(sourceId, { type: "geojson", data });
+    map.addSource(sourceId, { type: "geojson", data: display });
   }
 
   if (cat.type === "line") {

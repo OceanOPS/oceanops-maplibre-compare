@@ -13,6 +13,7 @@ import {
   getPartnerDataSnapshot,
   type PartnerCountriesFile,
 } from "./oceanops/partnerCountriesData";
+import { collectionForMapDisplay } from "./geoProjection";
 
 export type CountryFilterState = {
   selectedCountries: ReadonlySet<CountryName>;
@@ -180,7 +181,7 @@ export function applyCountryFilterToMap(
     const sourceId = `${layerId}-source`;
     const source = map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined;
     if (!source) continue;
-    source.setData(filteredCollection(layerId, state));
+    source.setData(collectionForMapDisplay(filteredCollection(layerId, state)));
   }
 }
 

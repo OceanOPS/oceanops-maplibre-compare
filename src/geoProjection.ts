@@ -1,4 +1,5 @@
 import proj4 from "proj4";
+import { getMapProjection } from "./mapProjectionState";
 import {
   PACIFIC_CENTRAL_MERIDIAN,
   PROJECTION_3D_GLOBE,
@@ -26,6 +27,10 @@ const MERC_HALF = 20037508.342789244;
 const EQ_HALF_X = 17243959.06;
 const EQ_GRID_FACT = MERC_HALF / EQ_HALF_X;
 
+/** Full Equal Earth world extent (ArcGIS tile services / simple-map). */
+export const EQUAL_EARTH_WORLD_HALF_X = 1.724_395_856_221_439e7;
+export const EQUAL_EARTH_WORLD_HALF_Y = 8_392_927.098_466_456;
+
 const EQC_HALF_X = Math.PI * 6378137.0;
 const EQC_HALF_Y = (Math.PI / 2) * 6378137.0;
 
@@ -39,6 +44,35 @@ function displayLngLatToMercatorPlane(lng: number, lat: number): [number, number
 
 function wgs84ToEqualEarthMeters(lon: number, lat: number): [number, number] {
   return proj4(WGS84, "OCEANOPS_EQ", [lon, lat]) as [number, number];
+}
+
+export function equalEarthMetersToDisplayLngLat(x: number, y: number): [number, number] {
+  return mercatorPlaneToDisplayLngLat(x * EQ_GRID_FACT, y * EQ_GRID_FACT);
+}
+
+/** NW, NE, SE, SW of the Equal Earth world rectangle in MapLibre display lng/lat. */
+export function equalEarthWorldDisplayCoordinates(): [
+  [number, number],
+  [number, number],
+  [number, number],
+  [number, number],
+] {
+  const hx = EQUAL_EARTH_WORLD_HALF_X;
+  const hy = EQUAL_EARTH_WORLD_HALF_Y;
+  return [
+    equalEarthMetersToDisplayLngLat(-hx, hy),
+    equalEarthMetersToDisplayLngLat(hx, hy),
+    equalEarthMetersToDisplayLngLat(hx, -hy),
+    equalEarthMetersToDisplayLngLat(-hx, -hy),
+  ];
+}
+
+export function equalEarthWorldDisplayBounds(): [[number, number], [number, number]] {
+  const [nw, ne, se, sw] = equalEarthWorldDisplayCoordinates();
+  return [
+    [Math.min(nw[0], sw[0]), Math.min(sw[1], se[1])],
+    [Math.max(ne[0], se[0]), Math.max(nw[1], ne[1])],
+  ];
 }
 
 function wgs84ToPlateCarreeMeters(lon: number, lat: number): [number, number] {
@@ -171,6 +205,13 @@ export function transformFeatureCollectionForDisplay(
   };
 }
 
+/** Warp GeoJSON into the current MapLibre display space (Equal Earth / Plate Carrée). */
+export function collectionForMapDisplay(
+  collection: GeoJSON.FeatureCollection
+): GeoJSON.FeatureCollection {
+  return transformFeatureCollectionForDisplay(collection, getMapProjection());
+}
+
 /** WGS84 world corners for initial flat framing (Pacific-centred plate carrée / Equal Earth). */
 export function wgs84WorldSampleGrid(): [number, number][] {
   const lons: number[] = [];
@@ -230,4 +271,59 @@ export function wgs84BboxToEqualEarthMeters(
     ymax = Math.max(ymax, y);
   }
   return { xmin, ymin, xmax, ymax };
+}
+
+export const OCEANOPS_NAVY_RGB = [0x0b, 0x1e, 0x42] as const;
+
+export type EqualEarthMeterExtent = {
+  xmin: number;
+  ymin: number;
+  xmax: number;
+  ymax: number;
+};
+
+/** Fill pixels outside the Equal Earth oval with OceanOPS navy (#0b1e42). */
+export function paintNavyOutsideEqualEarth(
+  imageData: ImageData,
+  extent: EqualEarthMeterExtent
+): void {
+  const { width: w, height: h, data } = imageData;
+  const xSpan = extent.xmax - extent.xmin;
+  const ySpan = extent.ymax - extent.ymin;
+  if (w < 1 || h < 1 || xSpan <= 0 || ySpan <= 0) return;
+
+  const [nR, nG, nB] = OCEANOPS_NAVY_RGB;
+  const slack = xSpan / w;
+
+  for (let j = 0; j < h; j++) {
+    const y = extent.ymax - ((j + 0.5) / h) * ySpan;
+    const lat = (proj4("OCEANOPS_EQ", WGS84, [0, y]) as [number, number])[1];
+    const row = j * w * 4;
+    if (!Number.isFinite(lat) || Math.abs(lat) > 90.05) {
+      for (let i = 0; i < w; i++) {
+        const p = row + i * 4;
+        data[p] = nR;
+        data[p + 1] = nG;
+        data[p + 2] = nB;
+        data[p + 3] = 255;
+      }
+      continue;
+    }
+    const edgeX = (
+      proj4(WGS84, "OCEANOPS_EQ", [PACIFIC_CENTRAL_MERIDIAN + 179.99, lat]) as [
+        number,
+        number,
+      ]
+    )[0];
+    const xLimit = Math.abs(edgeX) + slack;
+    for (let i = 0; i < w; i++) {
+      const x = extent.xmin + ((i + 0.5) / w) * xSpan;
+      if (Math.abs(x) <= xLimit) continue;
+      const p = row + i * 4;
+      data[p] = nR;
+      data[p + 1] = nG;
+      data[p + 2] = nB;
+      data[p + 3] = 255;
+    }
+  }
 }

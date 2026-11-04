@@ -191,6 +191,7 @@ body.map-embedded #mapShell {
 }
 
 /* Plate Carrée / Equal Earth view surface (matches 3D globe #0b1e42). */
+body.flat-mapserver-basemap #map,
 body.flat-mapserver-basemap #viewDiv,
 body.flat-mapserver-basemap #viewDiv .esri-view-root,
 body.flat-mapserver-basemap #viewDiv .esri-view-surface {
@@ -703,12 +704,17 @@ body.flat-mapserver-basemap #viewDiv .esri-view-surface {
   padding: 0;
 }
 
-.o-map-scroll-wheel-toggle:hover,
+@media (hover: hover) {
+  .o-map-scroll-wheel-toggle:hover {
+    opacity: 0.85;
+    border-color: #f48b25;
+    color: #f48b25;
+  }
+}
+
 .o-map-scroll-wheel-toggle:focus-visible {
-  opacity: 0.85;
-  border-color: #f48b25;
-  color: #f48b25;
-  outline: none;
+  outline: 2px solid #f48b25;
+  outline-offset: 2px;
 }
 
 .o-map-scroll-wheel-toggle.is-active {
@@ -720,12 +726,17 @@ body.flat-mapserver-basemap #viewDiv .esri-view-surface {
   transform: scale(0.95);
 }
 
-.o-map-fullscreen-toggle:hover,
+@media (hover: hover) {
+  .o-map-fullscreen-toggle:hover {
+    opacity: 0.85;
+    border-color: #f48b25;
+    color: #f48b25;
+  }
+}
+
 .o-map-fullscreen-toggle:focus-visible {
-  opacity: 0.85;
-  border-color: #f48b25;
-  color: #f48b25;
-  outline: none;
+  outline: 2px solid #f48b25;
+  outline-offset: 2px;
 }
 
 .o-map-fullscreen-toggle.is-active {
@@ -1338,6 +1349,18 @@ body.map-fullscreen:fullscreen #mapShell {
   opacity: 0.7;
 }
 
+/* Count sits beside the + button (not inside) so long labels do not clip "(n)". */
+.o-legend-filter-row > .o-legend-count + .o-legend-network-details-btn--icon-only {
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
+.o-legend-network-details-btn--icon-only {
+  margin-left: 0;
+  padding: 3px 5px;
+  gap: 0;
+}
+
 .o-legend-network-details-icon {
   display: inline-flex;
   align-items: center;
@@ -1550,6 +1573,10 @@ body.o-country-modal-open {
   font-size: 13px;
   line-height: 1.5;
   opacity: 0.88;
+}
+
+.o-country-modal-group--oceanops-contribution .o-country-modal-group-title {
+  text-transform: none;
 }
 
 .o-country-modal-group .o-country-modal-section:last-child {

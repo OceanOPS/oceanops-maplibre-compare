@@ -2,7 +2,11 @@ import type maplibregl from "maplibre-gl";
 import { appendToolbarHint, clearToolbarHint } from "./oceanops/mapToolbar";
 import { isMapFullscreen, setMapFullscreen } from "./oceanops/mapFullscreen";
 import type { BasemapKind } from "./basemap";
-import type { MapProjectionMode } from "./layers";
+import {
+  mapProjectionLabel,
+  nextMapProjection,
+  type MapProjectionMode,
+} from "./layers";
 import { assetUrl } from "./assetUrl";
 
 export type DisplayMenuOptions = {
@@ -14,10 +18,17 @@ export type DisplayMenuOptions = {
   onShellLayoutChange?: () => void;
 };
 
+/** User preference — source of truth for UI (#180); MapLibre `isEnabled()` can disagree on mobile. */
 let scrollWheelZoomEnabled = false;
 
 export function isScrollWheelZoomEnabled(): boolean {
   return scrollWheelZoomEnabled;
+}
+
+export function applyScrollWheelZoom(map: maplibregl.Map, enabled: boolean): void {
+  scrollWheelZoomEnabled = enabled;
+  if (enabled) map.scrollZoom.enable();
+  else map.scrollZoom.disable();
 }
 
 export function mountMapDisplayMenu(options: DisplayMenuOptions): HTMLDivElement {
@@ -67,7 +78,6 @@ export function mountMapDisplayMenu(options: DisplayMenuOptions): HTMLDivElement
   scrollWheelHint.textContent = "Scroll zoom";
 
   const syncScrollWheelUi = () => {
-    scrollWheelZoomEnabled = options.map.scrollZoom.isEnabled();
     scrollWheelBtn.classList.toggle("is-active", scrollWheelZoomEnabled);
     scrollWheelBtn.innerHTML = scrollWheelIcon;
     scrollWheelBtn.setAttribute("aria-pressed", scrollWheelZoomEnabled ? "true" : "false");
@@ -79,11 +89,18 @@ export function mountMapDisplayMenu(options: DisplayMenuOptions): HTMLDivElement
   };
 
   scrollWheelBtn.addEventListener("click", () => {
-    if (options.map.scrollZoom.isEnabled()) options.map.scrollZoom.disable();
-    else options.map.scrollZoom.enable();
+    applyScrollWheelZoom(options.map, !scrollWheelZoomEnabled);
+    syncScrollWheelUi();
+    scrollWheelBtn.blur();
+  });
+
+  applyScrollWheelZoom(options.map, false);
+  syncScrollWheelUi();
+
+  options.map.on("load", () => {
+    applyScrollWheelZoom(options.map, scrollWheelZoomEnabled);
     syncScrollWheelUi();
   });
-  syncScrollWheelUi();
   scrollWheelSection.append(scrollWheelBtn, scrollWheelHint);
 
   const divider3 = document.createElement("div");
@@ -114,17 +131,17 @@ export function mountMapDisplayMenu(options: DisplayMenuOptions): HTMLDivElement
   };
   fullscreenBtn.addEventListener("click", () => {
     void setMapFullscreen(!isMapFullscreen(), options.onShellLayoutChange);
+    fullscreenBtn.blur();
   });
   document.addEventListener("fullscreenchange", syncFullscreenUi);
   document.addEventListener("map-fullscreen-change", syncFullscreenUi);
   syncFullscreenUi();
   fullscreenSection.append(fullscreenBtn);
 
-  const projectionPreviewImage = (target: MapProjectionMode): string =>
-    target === "globe" ? "globe.jpeg" : "mercator.jpeg";
-
-  const projectionLabel = (mode: MapProjectionMode): string =>
-    mode === "globe" ? "Globe" : "Web Mercator";
+  const projectionPreviewImage = (target: MapProjectionMode): string => {
+    if (target === "globe") return "globe.jpeg";
+    return "mercator.jpeg";
+  };
 
   const updateBasemapUi = () => {
     const kind = options.getBasemapKind();
@@ -141,12 +158,14 @@ export function mountMapDisplayMenu(options: DisplayMenuOptions): HTMLDivElement
   };
 
   const syncProjectionUi = () => {
-    const current = options.getProjection();
-    const next: MapProjectionMode = current === "globe" ? "mercator" : "globe";
+    const next = nextMapProjection(options.getProjection());
     const preview = projectionPreviewImage(next);
     projectionPreviewBtn.innerHTML = `<div class="o-basemap-preview" style="background-image:url('${assetUrl(`/img/${preview}`)}')"></div>`;
-    projectionHint.textContent = projectionLabel(next);
-    projectionPreviewBtn.setAttribute("aria-label", `Switch to ${projectionLabel(next)}`);
+    projectionHint.textContent = mapProjectionLabel(next);
+    projectionPreviewBtn.setAttribute(
+      "aria-label",
+      `Switch to ${mapProjectionLabel(next)}`
+    );
     clearToolbarHint(projectionPreviewBtn);
   };
 
@@ -164,8 +183,7 @@ export function mountMapDisplayMenu(options: DisplayMenuOptions): HTMLDivElement
 
   projectionPreviewBtn.addEventListener("click", () => {
     void (async () => {
-      const next: MapProjectionMode =
-        options.getProjection() === "globe" ? "mercator" : "globe";
+      const next = nextMapProjection(options.getProjection());
       projectionSection.classList.add("is-busy");
       projectionPreviewBtn.disabled = true;
       try {

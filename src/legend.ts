@@ -5,7 +5,11 @@ import {
   type CountryName,
 } from "./oceanops/countryFilters";
 import { appendCountryFlag, getCountryIsoCode } from "./oceanops/countryFlags";
-import { getNetworkLegendTotal, getPartnerDataSnapshot } from "./oceanops/partnerCountriesData";
+import {
+  getGoshipLegendCount,
+  getNetworkLegendTotal,
+  getPartnerDataSnapshot,
+} from "./oceanops/partnerCountriesData";
 import {
   closeAllLegendMetricsModals,
   createLegendNetworkDetailsBtn,
@@ -206,12 +210,13 @@ export function mountLegend(callbacks: LegendCallbacks): {
     for (const cat of legendRowCategories()) {
       const node = countNodes.get(cat.id);
       if (!node) continue;
-      if (cat.id === "goship" && allCountriesSelected) {
-        const total = getNetworkLegendTotal("goship", snap);
-        node.textContent =
-          total != null ? formatNetworkLegendCount(total) : formatNetworkLegendCount(
-            filter.countLayer("goship", true)
-          );
+      if (cat.id === "goship") {
+        const total = getGoshipLegendCount(
+          filter.selectedCountries,
+          filter.filterableCountries
+        );
+        node.textContent = formatNetworkLegendCount(total);
+        node.title = `${total.toLocaleString()} edition cruises (lead program country)`;
         continue;
       }
       if (cat.id === "oceantrax" && allCountriesSelected) {
@@ -342,6 +347,7 @@ export function mountLegend(callbacks: LegendCallbacks): {
     countNodes.set(cat.id, countEl);
 
     checkbox.checked = callbacks.isVisible(cat);
+    checkbox.dataset.layerId = cat.id;
     checkbox.addEventListener("change", () => {
       callbacks.onVisibilityChange(cat, checkbox.checked);
       refreshCounts();

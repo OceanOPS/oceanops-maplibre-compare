@@ -15,6 +15,7 @@ import {
   getLastCountryFilterState,
   registerLayerGeoJson,
 } from "./geoJsonCountryFilter";
+import { collectionForMapDisplay } from "./geoProjection";
 import { ensurePointMarkerImages } from "./pointMarkerImages";
 import {
   MARKER_CANVAS_PX,
@@ -147,7 +148,9 @@ export async function addMooringStackLayer(
   registerLayerGeoJson(MOORING_STACK_LAYER_ID, stackCollection);
   await ensureStackImages(map);
   const visibility = mooringVisibilityFromMap(map);
-  const data = enrichedStackData(stackCollection, visibility);
+  const data = collectionForMapDisplay(
+    enrichedStackData(stackCollection, visibility)
+  );
 
   if (map.getSource(STACK_SOURCE)) {
     (map.getSource(STACK_SOURCE) as maplibregl.GeoJSONSource).setData(data);
@@ -194,7 +197,7 @@ export function refreshMooringStackLayer(
   const base = state
     ? filteredCollection(MOORING_STACK_LAYER_ID, state)
     : stackCollection;
-  const data = enrichedStackData(base, visibility);
+  const data = collectionForMapDisplay(enrichedStackData(base, visibility));
   (map.getSource(STACK_SOURCE) as maplibregl.GeoJSONSource).setData(data);
 
   const anyStackVisible =
