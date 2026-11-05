@@ -109,8 +109,20 @@ function featureMatchesGoshipLine(
   return false;
 }
 
-function featureMatchesOceanTraX(props: Record<string, unknown>): boolean {
+function oceanTraXIsActive(props: Record<string, unknown>): boolean {
   return String(props.line_status ?? "").trim().toLowerCase() === "active";
+}
+
+function oceanTraXMatchesOperatingCountry(
+  props: Record<string, unknown>,
+  dbNames: Set<string>
+): boolean {
+  const operated = String(props.operated_by_countries ?? "").trim();
+  if (!operated) return false;
+  for (const name of dbNames) {
+    if (csvIncludesToken(operated, name)) return true;
+  }
+  return false;
 }
 
 function passesMbnTier(props: Record<string, unknown>, tier: MbnGoosTierFilter): boolean {
@@ -140,7 +152,9 @@ function filterFeature(
   }
 
   if (layerId === "oceantrax") {
-    return featureMatchesOceanTraX(props);
+    if (!oceanTraXIsActive(props)) return false;
+    if (allSelected) return true;
+    return oceanTraXMatchesOperatingCountry(props, dbNames);
   }
 
   if (layerId === "moored_buoys" || layerId === "soconet_moorings") {
