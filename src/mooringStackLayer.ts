@@ -180,6 +180,8 @@ export async function addMooringStackLayer(
         ],
       ],
       "icon-size": pointMarkerIconSize,
+      "icon-pitch-alignment": "map",
+      "icon-rotation-alignment": "map",
       "icon-anchor": "center",
       "icon-allow-overlap": true,
       "icon-ignore-placement": true,

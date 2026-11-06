@@ -18,16 +18,17 @@ import { pointMarkerIconSize, shipIconSize } from "./mapSymbolSize";
 import {
   PROJECTION_3D_GLOBE,
   PROJECTION_EQUAL_EARTH,
+  PROJECTION_PLATE_CARREE_PACIFIC,
   type ProjectionId,
 } from "./projections";
 
 const LINE_LAYER_IDS = new Set(["goship", "oceantrax"]);
 
-export type MapProjectionMode = "globe" | "mercator" | "equal-earth";
+export type MapProjectionMode = "globe" | "plate-carree" | "equal-earth";
 
 export const MAP_PROJECTION_CYCLE: readonly MapProjectionMode[] = [
   "globe",
-  "mercator",
+  "plate-carree",
   "equal-earth",
 ];
 
@@ -40,16 +41,23 @@ export function mapProjectionLabel(mode: MapProjectionMode): string {
   switch (mode) {
     case "globe":
       return "3D Globe";
-    case "mercator":
-      return "Web Mercator";
+    case "plate-carree":
+      return "Plate Carrée (150°W)";
     case "equal-earth":
       return "Equal Earth (150°W)";
   }
 }
 
-/** Warp target for GeoJSON / MapServer — Web Mercator stays unwarped like the globe. */
+/** MapLibre UI modes → internal projection ids (flat modes use MapServer export + coordinate warp). */
 export function toProjectionId(mode: MapProjectionMode): ProjectionId {
-  return mode === "equal-earth" ? PROJECTION_EQUAL_EARTH : PROJECTION_3D_GLOBE;
+  switch (mode) {
+    case "equal-earth":
+      return PROJECTION_EQUAL_EARTH;
+    case "plate-carree":
+      return PROJECTION_PLATE_CARREE_PACIFIC;
+    default:
+      return PROJECTION_3D_GLOBE;
+  }
 }
 
 function lineGeoJsonUrl(id: string, projection: MapProjectionMode): string {
@@ -226,6 +234,8 @@ export async function addCategoryLayer(
       layout: {
         "icon-image": iconId,
         "icon-size": shipIconSize,
+        "icon-pitch-alignment": "map",
+        "icon-rotation-alignment": "map",
         "icon-allow-overlap": true,
         "icon-ignore-placement": true,
       },
@@ -243,6 +253,8 @@ export async function addCategoryLayer(
       layout: {
         "icon-image": markerId,
         "icon-size": pointMarkerIconSize,
+        "icon-pitch-alignment": "map",
+        "icon-rotation-alignment": "map",
         "icon-allow-overlap": true,
         "icon-ignore-placement": true,
       },
@@ -253,6 +265,7 @@ export async function addCategoryLayer(
       type: "circle",
       source: sourceId,
       paint: {
+        "circle-pitch-alignment": "map",
         "circle-radius": pointRadius(cat),
         "circle-color": cat.color,
         "circle-opacity": cat.id === "anibos" ? 0.85 : 0.75,

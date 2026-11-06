@@ -5,6 +5,7 @@ import {
   EQUAL_EARTH_MAPSERVER_WKT,
   EQUAL_EARTH_WORLD_HALF_X,
   EQUAL_EARTH_WORLD_HALF_Y,
+  equalEarthWorldDisplayCoordinates,
   paintNavyOutsideEqualEarth,
   wgs84BboxToEqualEarthMeters,
   type EqualEarthMeterExtent,
@@ -301,9 +302,10 @@ export async function refreshFlatBasemapImage(
   if (isEqualEarthProjection(projection) && isWorldScaleView(map)) {
     url = equalEarthWorldExportUrl(kind);
     equalEarthExtent = EQUAL_EARTH_WORLD_EXTENT;
-    // Place on the visible viewport, not the ±180° world rectangle — MapLibre
-    // image sources that touch the antimeridian do not render.
-    coordinates = viewportCoordinates(map);
+    // Must pin the full-world Equal Earth export to the warped quadrilateral in
+    // display space — not the rectangular map viewport (that stretched the image
+    // over the screen and broke alignment with layers / tile basemap bleed).
+    coordinates = equalEarthWorldDisplayCoordinates();
   } else if (isEqualEarthProjection(projection)) {
     const bounds = map.getBounds();
     const { west, south, east, north } = wgs84BboxFromDisplayBounds(bounds, projection);

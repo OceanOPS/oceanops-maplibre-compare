@@ -36,6 +36,18 @@ const MENU_TOGGLE_HINT = {
   open: "Hide map legend and contributing countries",
 } as const;
 
+/** Session flag so first-time pulse matches oceanops-simple-map pattern (separate key per app). */
+const LEGEND_FIRST_OPEN_KEY = "oceanops-maplibre-compare-legend-opened-v1";
+
+function markLegendDiscovered(toggleButton: HTMLButtonElement): void {
+  try {
+    sessionStorage.setItem(LEGEND_FIRST_OPEN_KEY, "1");
+  } catch {
+    /* ignore */
+  }
+  toggleButton.classList.remove("o-legend-toggle--pulse");
+}
+
 const menuToggleIconClosed = `
   <svg width="20" height="16" viewBox="0 0 20 16" fill="none" aria-hidden="true">
     <rect x="1" y="1" width="18" height="14" rx="2" stroke="#f8f8f8" stroke-width="1.75"/>
@@ -70,11 +82,19 @@ function setMenuToggleState(button: HTMLButtonElement, isOpen: boolean): void {
     "aria-label",
     isOpen ? MENU_TOGGLE_HINT.open : MENU_TOGGLE_HINT.closed
   );
+  button.removeAttribute("title");
+
   const icon = button.querySelector(".o-legend-toggle__icon");
-  if (icon) icon.innerHTML = isOpen ? menuToggleIconOpen : menuToggleIconClosed;
+  if (icon) {
+    icon.innerHTML = isOpen ? menuToggleIconOpen : menuToggleIconClosed;
+  }
   const hint = button.querySelector(".o-legend-toggle__hint");
   if (hint) {
     hint.textContent = isOpen ? MENU_TOGGLE_HINT.open : MENU_TOGGLE_HINT.closed;
+  }
+  const label = button.querySelector(".o-legend-toggle__label");
+  if (label) {
+    label.setAttribute("aria-hidden", isOpen ? "true" : "false");
   }
 }
 
@@ -97,6 +117,7 @@ export function mountLegend(callbacks: LegendCallbacks): {
   close: () => void;
   refreshCounts: () => void;
 } {
+  document.getElementById("legend-toggle")?.remove();
   document.getElementById("legend-backdrop")?.remove();
   document.getElementById("legend")?.remove();
 
@@ -115,16 +136,30 @@ export function mountLegend(callbacks: LegendCallbacks): {
   toggleButton.type = "button";
   toggleButton.className = "o-legend-toggle o-map-control-with-hint";
   toggleButton.innerHTML = `
-    <span class="o-legend-toggle__icon">${menuToggleIconClosed}</span>
+    <span class="o-legend-toggle__inner">
+      <span class="o-legend-toggle__icon">${menuToggleIconClosed}</span>
+      <span class="o-legend-toggle__label">
+        <span class="o-legend-toggle__label-line o-legend-toggle__label-line--title">Map legend</span>
+      </span>
+    </span>
     <span class="o-legend-toggle__hint o-map-toolbar-hint">${MENU_TOGGLE_HINT.closed}</span>
   `;
   setMenuToggleState(toggleButton, false);
+
+  try {
+    if (sessionStorage.getItem(LEGEND_FIRST_OPEN_KEY) !== "1") {
+      toggleButton.classList.add("o-legend-toggle--pulse");
+    }
+  } catch {
+    toggleButton.classList.add("o-legend-toggle--pulse");
+  }
 
   const setOpen = (open: boolean) => {
     panel.classList.toggle("open", open);
     backdrop.classList.toggle("open", open);
     document.body.classList.toggle("menu-open", open);
     setMenuToggleState(toggleButton, open);
+    if (open) markLegendDiscovered(toggleButton);
     if (!open) closeAllLegendMetricsModals();
     callbacks.onLayoutChange?.();
   };
@@ -500,7 +535,10 @@ export function mountLegend(callbacks: LegendCallbacks): {
 
   return {
     toggleButton,
-    open: () => setOpen(true),
+    open: () => {
+      markLegendDiscovered(toggleButton);
+      setOpen(true);
+    },
     close: () => setOpen(false),
     refreshCounts: () => {
       if (countryList.childElementCount === 0) mountCountryRows();

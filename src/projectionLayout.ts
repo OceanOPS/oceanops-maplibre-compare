@@ -4,7 +4,9 @@ import {
   is3dProjection,
   isCustomFlatBasemapProjection,
   isEqualEarthProjection,
+  isPlateCarreeProjection,
   PROJECTION_EQUAL_EARTH,
+  PROJECTION_PLATE_CARREE_PACIFIC,
   type ProjectionId,
 } from "./projections";
 
@@ -56,6 +58,31 @@ export function frameEqualEarthView(map: maplibregl.Map): void {
   map.setMaxBounds(bounds);
 }
 
+/**
+ * Full-world Plate Carrée (150°W) in display space — more “dezoomed” than the old
+ * fixed center/zoom, and aligned with Pacific-centred framing.
+ */
+export function framePlateCarreeView(map: maplibregl.Map): void {
+  if (typeof map.setRenderWorldCopies === "function") {
+    map.setRenderWorldCopies(false);
+  }
+  map.setMaxBounds(null);
+  map.setMinZoom(-2);
+  const bounds = displayBoundsForWorld(PROJECTION_PLATE_CARREE_PACIFIC);
+  const camera = map.cameraForBounds(bounds, { padding: 12, bearing: 0, pitch: 0 });
+  if (camera?.center != null && camera.zoom != null) {
+    map.jumpTo({
+      center: camera.center,
+      zoom: camera.zoom,
+      bearing: 0,
+      pitch: 0,
+    });
+    // Do not set minZoom to the fitted zoom (unlike Equal Earth). Users must be able
+    // to zoom out further if padding / bbox sampling left the world slightly tight.
+  }
+  map.setMaxBounds(bounds);
+}
+
 export function restoreDefaultWorldView(map: maplibregl.Map): void {
   if (typeof map.setRenderWorldCopies === "function") {
     map.setRenderWorldCopies(true);
@@ -79,6 +106,12 @@ export function applyProjectionViewConstraints(
     map.dragRotate.disable();
     map.touchZoomRotate.disableRotation();
     frameEqualEarthView(map);
+    return;
+  }
+  if (isPlateCarreeProjection(projection)) {
+    map.dragRotate.disable();
+    map.touchZoomRotate.disableRotation();
+    framePlateCarreeView(map);
     return;
   }
   map.dragRotate.enable();

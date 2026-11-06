@@ -191,20 +191,9 @@ function bindGlobeRotationInterrupts(): void {
   map.on("dblclick", stop);
 }
 
-const GLOBE_FOG = {
-  color: "#0b1e42",
-  "high-color": "#0b1e42",
-  "horizon-blend": 0.08,
-} as const;
-
-function applyGlobeFog(enabled: boolean): void {
-  if (!("setFog" in map) || typeof map.setFog !== "function") return;
-  map.setFog(enabled ? { ...GLOBE_FOG } : null);
-}
-
 function applyBasemapForCurrentProjection(): void {
   const projection = toProjectionId(projectionMode);
-  if (is3dProjection(projection) || projectionMode === "mercator") {
+  if (is3dProjection(projection)) {
     setBasemapKind(map, basemapKind);
   }
   syncBasemapModeForProjection(map, projection, basemapKind);
@@ -218,7 +207,9 @@ async function applyProjection(mode: MapProjectionMode): Promise<void> {
   applyProjectionShellLayout(projection);
 
   if (mode === "globe") {
-    applyGlobeFog(true);
+    // No fog on globe: fog horizon-blend reads as “transparent ocean” and bleeds
+    // through to markers on the far side during fast spins.
+    if ("setFog" in map && typeof map.setFog === "function") map.setFog(null);
     map.setProjection({ type: "globe" });
     applyProjectionViewConstraints(map, projection, {
       resetCamera: leavingEqualEarth,
@@ -227,7 +218,7 @@ async function applyProjection(mode: MapProjectionMode): Promise<void> {
     startGlobeRotation();
   } else {
     stopGlobeRotation();
-    applyGlobeFog(false);
+    if ("setFog" in map && typeof map.setFog === "function") map.setFog(null);
     map.setProjection({ type: "mercator" });
     applyProjectionViewConstraints(map, projection, {
       resetCamera: leavingEqualEarth || mode === "equal-earth",

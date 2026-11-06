@@ -212,11 +212,15 @@ export function collectionForMapDisplay(
   return transformFeatureCollectionForDisplay(collection, getMapProjection());
 }
 
-/** WGS84 world corners for initial flat framing (Pacific-centred plate carrée / Equal Earth). */
+/**
+ * Sample WGS84 for {@link displayBoundsForWorld} — must include ±90° so the
+ * Mercator display bbox spans the full projected world (plate carrée / Equal Earth).
+ * Omitting the poles underestimated height and made the initial fit too zoomed-in.
+ */
 export function wgs84WorldSampleGrid(): [number, number][] {
   const lons: number[] = [];
   for (let lon = -180; lon <= 180; lon += 30) lons.push(lon);
-  const lats = [-85, -60, -30, 0, 30, 60, 85];
+  const lats = [-90, -85, -60, -30, 0, 30, 60, 85, 90];
   const out: [number, number][] = [];
   for (const lat of lats) {
     for (const lon of lons) out.push([lon, lat]);
