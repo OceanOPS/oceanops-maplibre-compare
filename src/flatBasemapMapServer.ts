@@ -24,6 +24,7 @@ import {
   beginBasemapZoomLoad,
   endBasemapLayerLoad,
   resetBasemapLoader,
+  setBasemapLoaderProgress,
 } from "./basemapLoader";
 
 export const OCEAN_MAP_SERVER =
@@ -264,12 +265,14 @@ async function fetchImageBlobWithProgress(
 
 async function navyEqualEarthDisplayUrl(
   url: string,
-  extent: EqualEarthMeterExtent
+  extent: EqualEarthMeterExtent,
+  onProgress?: (percent: number | null) => void
 ): Promise<string> {
-  const imageBlob = await fetchImageBlobWithProgress(url, () => {});
+  const imageBlob = await fetchImageBlobWithProgress(url, (p) => onProgress?.(p));
   const imageObjectUrl = URL.createObjectURL(imageBlob);
   let img: HTMLImageElement;
   try {
+    onProgress?.(null);
     img = await loadHtmlImageFromObjectUrl(imageObjectUrl);
   } finally {
     URL.revokeObjectURL(imageObjectUrl);
@@ -287,23 +290,30 @@ async function navyEqualEarthDisplayUrl(
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   paintNavyOutsideEqualEarth(imageData, extent);
   ctx.putImageData(imageData, 0, 0);
+  onProgress?.(null);
   const pngBlob = await new Promise<Blob | null>((resolve) => {
     canvas.toBlob(resolve, "image/png");
   });
+  onProgress?.(100);
   return pngBlob ? URL.createObjectURL(pngBlob) : url;
 }
 
 function preloadBasemapImage(
   url: string,
-  equalEarthExtent?: EqualEarthMeterExtent
+  equalEarthExtent?: EqualEarthMeterExtent,
+  onProgress?: (percent: number | null) => void
 ): Promise<string> {
   const hit = decodedByUrl.get(url);
-  if (hit) return hit;
+  if (hit) {
+    onProgress?.(100);
+    return hit;
+  }
   const pending = (async () => {
     try {
       if (equalEarthExtent) {
-        return await navyEqualEarthDisplayUrl(url, equalEarthExtent);
+        return await navyEqualEarthDisplayUrl(url, equalEarthExtent, onProgress);
       }
+      onProgress?.(100);
       return url;
     } catch (error) {
       decodedByUrl.delete(url);
@@ -404,7 +414,11 @@ function worldBasemapOnMap(map: maplibregl.Map, kind: BasemapKind): boolean {
 async function ensureWorldBasemap(map: maplibregl.Map, kind: BasemapKind): Promise<void> {
   const coordinates = equalEarthWorldDisplayCoordinates();
   const exportUrl = equalEarthWorldExportUrl(kind);
-  const displayUrl = await preloadBasemapImage(exportUrl, EQUAL_EARTH_WORLD_EXTENT);
+  const displayUrl = await preloadBasemapImage(
+    exportUrl,
+    EQUAL_EARTH_WORLD_EXTENT,
+    setBasemapLoaderProgress
+  );
   const hadSource = Boolean(map.getSource(FLAT_WORLD_SOURCE_ID));
   const source = ensureImageRasterLayer(
     map,
@@ -493,7 +507,11 @@ export async function refreshFlatBasemapImage(
   beginBasemapZoomLoad(loadZoom);
   const generation = ++refreshGeneration;
   try {
-    const displayUrl = await preloadBasemapImage(request.url, request.extent);
+    const displayUrl = await preloadBasemapImage(
+      request.url,
+      request.extent,
+      setBasemapLoaderProgress
+    );
     if (generation !== refreshGeneration) return;
     if (getMapProjection() !== projection) return;
     if (useWorldExtentBasemap(map)) return;

@@ -28,10 +28,30 @@ function labelElement(): HTMLSpanElement | null {
   return overlay?.querySelector(".o-mapserver-loader__label") ?? null;
 }
 
+let loaderBaseLabel = "";
+
+function renderLoaderLabel(percent: number | null | undefined): void {
+  const el = labelElement();
+  if (!el) return;
+  let text = loaderBaseLabel;
+  if (percent === null) {
+    text += " …";
+  } else if (percent != null && Number.isFinite(percent)) {
+    text += ` · ${Math.round(percent)}%`;
+  }
+  el.textContent = text;
+}
+
 export function setBasemapLoaderLabel(text: string): void {
   ensureBasemapLoader();
-  const el = labelElement();
-  if (el) el.textContent = text;
+  loaderBaseLabel = text;
+  renderLoaderLabel(undefined);
+}
+
+/** Byte download 0–100; `null` = size unknown or image processing after download. */
+export function setBasemapLoaderProgress(percent: number | null): void {
+  if (!loaderBaseLabel) return;
+  renderLoaderLabel(percent);
 }
 
 function setLoaderActive(active: boolean): void {
@@ -61,11 +81,6 @@ function armShow(delay: number): void {
     showTimer = null;
     if (inFlightLoads > 0) setLoaderActive(true);
   }, delay);
-}
-
-/** @deprecated Progress is not shown; kept for optional future use. */
-export function setBasemapLoaderProgress(_percent: number | null): void {
-  /* indeterminate loader only */
 }
 
 function beginLoadChrome(options?: { immediate?: boolean }): void {
@@ -134,6 +149,7 @@ export function endBasemapLoader(): void {
 export function resetBasemapLoader(): void {
   bootstrapLoads = 0;
   inFlightLoads = 0;
+  loaderBaseLabel = "";
   cancelShow();
   cancelHide();
   setLoaderActive(false);
