@@ -1,4 +1,9 @@
 import type maplibregl from "maplibre-gl";
+import { focusMapOnLngLat } from "./mapFocusOnSelection";
+import {
+  clearSelectionHighlight,
+  setSelectionHighlight,
+} from "./selectionHighlight";
 
 export type MapPopupPage = {
   title: string;
@@ -20,6 +25,7 @@ let pageCleanup: (() => void) | null = null;
 
 let pages: MapPopupPage[] = [];
 let pageIndex = 0;
+let popupMap: maplibregl.Map | null = null;
 
 function ensureHost(map: maplibregl.Map): HTMLDivElement {
   const container = map.getContainer();
@@ -124,6 +130,8 @@ export function closeMapPopup(): void {
   pageCleanup = null;
   pages = [];
   pageIndex = 0;
+  if (popupMap) clearSelectionHighlight(popupMap);
+  popupMap = null;
   if (host) host.hidden = true;
 }
 
@@ -144,12 +152,19 @@ export function showMapPopupPages(options: {
   pages: MapPopupPage[];
   lngLat: { lng: number; lat: number };
   map: maplibregl.Map;
+  /** Pan/zoom to the marker when opening (default true; search flies first). */
+  focusOnOpen?: boolean;
 }): void {
   if (options.pages.length === 0) return;
 
   const { map, lngLat } = options;
   closeMapPopup();
   ensureHost(map);
+  popupMap = map;
+  if (options.focusOnOpen !== false) {
+    focusMapOnLngLat(map, lngLat);
+  }
+  setSelectionHighlight(map, lngLat);
 
   pages = options.pages;
   pageIndex = 0;

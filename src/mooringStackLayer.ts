@@ -27,6 +27,9 @@ import type { CountryFilterState } from "./geoJsonCountryFilter";
 
 export { MOORING_STACK_LAYER_ID, loadMooringStackData, type MooringStackData };
 
+/** Multi-network stack PNGs only — smaller artwork in the 28px sprite (solo masks unchanged). */
+const STACK_COMPOSITE_ART_SCALE = 0.82;
+
 const STACK_SOURCE = `${MOORING_STACK_LAYER_ID}-source`;
 const STACK_LAYER = `${MOORING_STACK_LAYER_ID}-layer`;
 
@@ -87,8 +90,10 @@ async function addStackCompositeImage(
   const displayPx =
     PNG_DISPLAY_SIZE[displayMask] ??
     MAP_SQUARE_MARKER_SIZE + 2 * 0.5;
+  const compositeScale =
+    displayMask >= 3 ? STACK_COMPOSITE_ART_SCALE : 1;
   const targetArtPx =
-    (displayPx / MAP_SQUARE_MARKER_SIZE) * SQUARE_MARKER_SIDE_PX;
+    (displayPx / MAP_SQUARE_MARKER_SIZE) * SQUARE_MARKER_SIDE_PX * compositeScale;
 
   const canvas = document.createElement("canvas");
   canvas.width = MARKER_CANVAS_PX;

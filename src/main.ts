@@ -17,6 +17,7 @@ import {
 } from "./layers";
 import { mountFloatingToolbar, mountGlobeRotationControl } from "./floatingToolbar";
 import { mountLegend } from "./legend";
+import { registerMapAutoMotionStop } from "./mapAutoMotion";
 import { bindMapInteractions } from "./mapInteractions";
 import { mountMapDisplayMenu } from "./mapDisplayMenu";
 import { createCountryFilterController } from "./countryFilterController";
@@ -38,8 +39,10 @@ import { setMapProjection } from "./mapProjectionState";
 import {
   applyProjectionShellLayout,
   applyProjectionViewConstraints,
+  scheduleEqualEarthRefit,
 } from "./projectionLayout";
 import { is3dProjection } from "./projections";
+import { ensureBasemapLoader } from "./basemapLoader";
 import "./mapPopupStyles.css";
 import "./maplibre-overrides.css";
 
@@ -84,7 +87,14 @@ map.addControl(
 
 const shell = document.getElementById("mapShell")!;
 
-const onShellLayoutChange = () => map.resize();
+ensureBasemapLoader();
+
+const onShellLayoutChange = () => {
+  map.resize();
+  if (projectionMode === "equal-earth") {
+    scheduleEqualEarthRefit(map);
+  }
+};
 
 let countryFilter: ReturnType<typeof createCountryFilterController> | null = null;
 
@@ -256,6 +266,7 @@ map.on("load", async () => {
   countryFilter.apply();
   legendUi.refreshCounts();
 
+  registerMapAutoMotionStop(interruptGlobeRotationFromUser);
   bindMapInteractions(map);
   bindGlobeRotationInterrupts();
 

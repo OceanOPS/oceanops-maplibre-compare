@@ -17,6 +17,7 @@ import {
   isEqualEarthProjection,
   type ProjectionId,
 } from "./projections";
+import { setBasemapLoaderProgress, setBasemapLoaderVisible } from "./basemapLoader";
 
 export const OCEAN_MAP_SERVER =
   "https://services.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer";
@@ -124,30 +125,6 @@ function wgs84BboxFromDisplayBounds(
   return { west, south, east, north };
 }
 
-function plateCarreeExportUrl(
-  kind: BasemapKind,
-  west: number,
-  south: number,
-  east: number,
-  north: number,
-  width: number,
-  height: number
-): string {
-  const size = `${Math.min(MAX_EXPORT_SIZE, Math.max(256, width))},${Math.min(
-    MAX_EXPORT_SIZE,
-    Math.max(256, height)
-  )}`;
-  return mapServerUrl(mapServerBase(kind), {
-    bbox: `${west},${south},${east},${north}`,
-    bboxSR: "4326",
-    imageSR: "4326",
-    size,
-    format: "png32",
-    transparent: "false",
-    f: "image",
-  });
-}
-
 function firstNonBackgroundLayerId(map: maplibregl.Map): string | undefined {
   return map.getStyle().layers.find((layer) => layer.id !== "background")?.id;
 }
@@ -201,49 +178,110 @@ const decodedByUrl = new Map<string, Promise<string>>();
 let appliedUrl: string | null = null;
 let refreshGeneration = 0;
 
-function loadHtmlImage(url: string): Promise<HTMLImageElement> {
+function loadHtmlImageFromObjectUrl(objectUrl: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = "anonymous";
     img.decoding = "async";
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("Equal Earth basemap export failed"));
-    img.src = url;
+    img.onerror = () => reject(new Error("Equal Earth basemap image decode failed"));
+    img.src = objectUrl;
   });
+}
+
+/**
+ * Download PNG with byte progress when `Content-Length` is present (often on same-origin
+ * or when the CDN sends it). Otherwise finishes with a single 100% after `blob()`.
+ */
+async function fetchImageBlobWithProgress(
+  url: string,
+  onProgress: (percent: number | null) => void
+): Promise<Blob> {
+  const res = await fetch(url, { mode: "cors", credentials: "omit" });
+  if (!res.ok) {
+    throw new Error(`Basemap request failed: ${res.status}`);
+  }
+  const raw = res.headers.get("content-length");
+  const total = raw ? Number.parseInt(raw, 10) : NaN;
+  const body = res.body;
+  const type = res.headers.get("content-type") ?? "image/png";
+
+  if (!body || !Number.isFinite(total) || total <= 0) {
+    onProgress(null);
+    const blob = await res.blob();
+    onProgress(100);
+    return blob;
+  }
+
+  const reader = body.getReader();
+  const chunks: BlobPart[] = [];
+  let received = 0;
+  onProgress(0);
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      chunks.push(value);
+      received += value.length;
+      onProgress(Math.min(99, Math.round((received / total) * 100)));
+    }
+  }
+  onProgress(100);
+  return new Blob(chunks, { type });
 }
 
 async function navyEqualEarthDisplayUrl(
   url: string,
-  extent: EqualEarthMeterExtent
+  extent: EqualEarthMeterExtent,
+  onProgress?: (percent: number | null) => void
 ): Promise<string> {
-  const img = await loadHtmlImage(url);
+  const imageBlob = await fetchImageBlobWithProgress(url, (p) => {
+    onProgress?.(p);
+  });
+  const imageObjectUrl = URL.createObjectURL(imageBlob);
+  let img: HTMLImageElement;
+  try {
+    onProgress?.(null);
+    img = await loadHtmlImageFromObjectUrl(imageObjectUrl);
+  } finally {
+    URL.revokeObjectURL(imageObjectUrl);
+  }
   const canvas = document.createElement("canvas");
   canvas.width = img.naturalWidth;
   canvas.height = img.naturalHeight;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return url;
+  if (!ctx) {
+    onProgress?.(100);
+    return url;
+  }
   ctx.fillStyle = "#0b1e42";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(img, 0, 0);
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   paintNavyOutsideEqualEarth(imageData, extent);
   ctx.putImageData(imageData, 0, 0);
-  const blob = await new Promise<Blob | null>((resolve) => {
+  const pngBlob = await new Promise<Blob | null>((resolve) => {
     canvas.toBlob(resolve, "image/png");
   });
-  return blob ? URL.createObjectURL(blob) : url;
+  onProgress?.(100);
+  return pngBlob ? URL.createObjectURL(pngBlob) : url;
 }
 
 function preloadBasemapImage(
   url: string,
-  equalEarthExtent?: EqualEarthMeterExtent
+  equalEarthExtent?: EqualEarthMeterExtent,
+  onProgress?: (percent: number | null) => void
 ): Promise<string> {
   const hit = decodedByUrl.get(url);
-  if (hit) return hit;
+  if (hit) {
+    onProgress?.(100);
+    return hit;
+  }
   const pending = (async () => {
     try {
-      if (equalEarthExtent) return await navyEqualEarthDisplayUrl(url, equalEarthExtent);
-      await loadHtmlImage(url);
+      if (equalEarthExtent) {
+        return await navyEqualEarthDisplayUrl(url, equalEarthExtent, onProgress);
+      }
+      onProgress?.(100);
       return url;
     } catch (error) {
       decodedByUrl.delete(url);
@@ -284,6 +322,7 @@ export function syncBasemapModeForProjection(
     void refreshFlatBasemapImage(map, kind);
   } else {
     setFlatBasemapVisibility(map, false);
+    setBasemapLoaderVisible(false);
   }
 }
 
@@ -292,7 +331,10 @@ export async function refreshFlatBasemapImage(
   kind: BasemapKind
 ): Promise<void> {
   const projection = getMapProjection();
-  if (!isCustomFlatBasemapProjection(projection)) return;
+  if (!isCustomFlatBasemapProjection(projection)) {
+    setBasemapLoaderVisible(false);
+    return;
+  }
 
   const canvas = map.getCanvas();
   let url: string;
@@ -327,32 +369,27 @@ export async function refreshFlatBasemapImage(
     );
     coordinates = viewportCoordinates(map);
   } else {
-    const bounds = map.getBounds();
-    const { west, south, east, north } = wgs84BboxFromDisplayBounds(bounds, projection);
-    url = plateCarreeExportUrl(
-      kind,
-      west,
-      south,
-      east,
-      north,
-      canvas.clientWidth,
-      canvas.clientHeight
-    );
-    coordinates = viewportCoordinates(map);
+    return;
   }
 
   if (url === appliedUrl && map.getLayer(FLAT_BASEMAP_LAYER_ID)) {
     setGlobeRasterLayersHidden(map);
     setFlatBasemapVisibility(map, true);
+    setBasemapLoaderVisible(false);
     return;
   }
 
+  setBasemapLoaderVisible(true);
+  setBasemapLoaderProgress(null);
   const generation = ++refreshGeneration;
   let displayUrl: string;
   try {
-    displayUrl = await preloadBasemapImage(url, equalEarthExtent);
+    displayUrl = await preloadBasemapImage(url, equalEarthExtent, (p) =>
+      setBasemapLoaderProgress(p)
+    );
   } catch (error) {
     console.warn(error);
+    setBasemapLoaderVisible(false);
     return;
   }
   if (generation !== refreshGeneration) return;
@@ -360,11 +397,15 @@ export async function refreshFlatBasemapImage(
 
   const hadSource = Boolean(map.getSource(FLAT_BASEMAP_SOURCE_ID));
   const source = ensureFlatBasemapLayer(map, displayUrl, coordinates);
-  if (!source) return;
+  if (!source) {
+    setBasemapLoaderVisible(false);
+    return;
+  }
   if (hadSource) source.updateImage({ url: displayUrl, coordinates });
   appliedUrl = url;
   setGlobeRasterLayersHidden(map);
   setFlatBasemapVisibility(map, true);
+  setBasemapLoaderVisible(false);
 }
 
 let moveTimer: ReturnType<typeof setTimeout> | null = null;

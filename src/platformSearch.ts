@@ -247,7 +247,8 @@ export function mountPlatformSearch(options: {
         options.map,
         feature,
         mapLayerIdForHit(hit),
-        target.popup
+        target.popup,
+        { focusOnOpen: false }
       );
       input.value = "";
       setPanelOpen(false);

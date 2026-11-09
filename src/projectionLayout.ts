@@ -1,16 +1,14 @@
 import type maplibregl from "maplibre-gl";
-import { displayBoundsForWorld } from "./geoProjection";
+import { equalEarthWorldDisplayBoundsDense } from "./geoProjection";
 import {
   is3dProjection,
   isCustomFlatBasemapProjection,
   isEqualEarthProjection,
-  isPlateCarreeProjection,
-  PROJECTION_EQUAL_EARTH,
-  PROJECTION_PLATE_CARREE_PACIFIC,
   type ProjectionId,
 } from "./projections";
 
 let equalEarthFitZoom: number | null = null;
+let equalEarthRefitRaf = 0;
 
 export function getEqualEarthFitZoom(): number | null {
   return equalEarthFitZoom;
@@ -36,51 +34,50 @@ export function applyProjectionShellLayout(projection: ProjectionId): void {
   }
 }
 
-/** Fit Equal Earth onto the mercator display grid and lock zoom-out at that framing. */
-export function frameEqualEarthView(map: maplibregl.Map): void {
+function frameEqualEarthViewNow(map: maplibregl.Map): void {
   if (typeof map.setRenderWorldCopies === "function") {
     map.setRenderWorldCopies(false);
   }
   map.setMaxBounds(null);
   map.setMinZoom(-2);
-  const bounds = displayBoundsForWorld(PROJECTION_EQUAL_EARTH);
-  const camera = map.cameraForBounds(bounds, { padding: 12, bearing: 0, pitch: 0 });
-  if (camera?.center != null && camera.zoom != null) {
-    map.jumpTo({
-      center: camera.center,
-      zoom: camera.zoom,
-      bearing: 0,
-      pitch: 0,
-    });
-    map.setMinZoom(camera.zoom);
-    equalEarthFitZoom = camera.zoom;
-  }
-  map.setMaxBounds(bounds);
+
+  const bounds = equalEarthWorldDisplayBoundsDense() as [[number, number], [number, number]];
+
+  map.stop();
+  map.fitBounds(bounds, {
+    padding: 16,
+    bearing: 0,
+    pitch: 0,
+    duration: 0,
+    maxZoom: 24,
+  });
+
+  const zoom = map.getZoom();
+  equalEarthFitZoom = zoom;
+  map.setMinZoom(zoom);
+
+  map.setMaxBounds(map.getBounds());
 }
 
 /**
- * Full-world Plate Carrée (150°W) in display space — more “dezoomed” than the old
- * fixed center/zoom, and aligned with Pacific-centred framing.
+ * Equal Earth: fit the full oval after layout (legend width, fonts, first paint) so
+ * initial view is not cropped when the container was not at final size.
  */
-export function framePlateCarreeView(map: maplibregl.Map): void {
-  if (typeof map.setRenderWorldCopies === "function") {
-    map.setRenderWorldCopies(false);
-  }
-  map.setMaxBounds(null);
-  map.setMinZoom(-2);
-  const bounds = displayBoundsForWorld(PROJECTION_PLATE_CARREE_PACIFIC);
-  const camera = map.cameraForBounds(bounds, { padding: 12, bearing: 0, pitch: 0 });
-  if (camera?.center != null && camera.zoom != null) {
-    map.jumpTo({
-      center: camera.center,
-      zoom: camera.zoom,
-      bearing: 0,
-      pitch: 0,
+export function scheduleEqualEarthRefit(map: maplibregl.Map): void {
+  cancelAnimationFrame(equalEarthRefitRaf);
+  equalEarthRefitRaf = requestAnimationFrame(() => {
+    equalEarthRefitRaf = requestAnimationFrame(() => {
+      equalEarthRefitRaf = 0;
+      map.resize();
+      frameEqualEarthViewNow(map);
     });
-    // Do not set minZoom to the fitted zoom (unlike Equal Earth). Users must be able
-    // to zoom out further if padding / bbox sampling left the world slightly tight.
-  }
-  map.setMaxBounds(bounds);
+  });
+}
+
+/** Fit Equal Earth onto the mercator display grid and lock zoom-out at that framing. */
+export function frameEqualEarthView(map: maplibregl.Map): void {
+  frameEqualEarthViewNow(map);
+  scheduleEqualEarthRefit(map);
 }
 
 export function restoreDefaultWorldView(map: maplibregl.Map): void {
@@ -106,12 +103,6 @@ export function applyProjectionViewConstraints(
     map.dragRotate.disable();
     map.touchZoomRotate.disableRotation();
     frameEqualEarthView(map);
-    return;
-  }
-  if (isPlateCarreeProjection(projection)) {
-    map.dragRotate.disable();
-    map.touchZoomRotate.disableRotation();
-    framePlateCarreeView(map);
     return;
   }
   map.dragRotate.enable();

@@ -32,19 +32,6 @@ export const pointMarkerIconSize: ExpressionSpecification = [
   squareWorld * 1.18,
 ];
 
-/** Stack composite PNGs (slightly larger than solo squares). */
-export const mooringStackIconSize: ExpressionSpecification = [
-  "interpolate",
-  ["linear"],
-  ["zoom"],
-  0,
-  squareWorld * 1.12,
-  4,
-  squareWorld * 1.2,
-  10,
-  squareWorld * 1.32,
-];
-
 /** Ship sprites (~21px tall); target ~11px like Esri globe IconSymbol3DLayer. */
 const shipWorld = iconSizeForContentPx(21, 11);
 

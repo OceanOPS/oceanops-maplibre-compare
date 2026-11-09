@@ -4,7 +4,6 @@ import {
   PACIFIC_CENTRAL_MERIDIAN,
   PROJECTION_3D_GLOBE,
   PROJECTION_EQUAL_EARTH,
-  PROJECTION_PLATE_CARREE_PACIFIC,
   type ProjectionId,
 } from "./projections";
 
@@ -17,12 +16,6 @@ proj4.defs(
   `+proj=eqearth +lon_0=${PACIFIC_CENTRAL_MERIDIAN} +x_0=0 +y_0=0 +R=6371008.7714 +units=m +no_defs`
 );
 
-/** Pacific-centred plate carrée (equirectangular). */
-proj4.defs(
-  "OCEANOPS_EQC",
-  `+proj=eqc +lat_ts=0 +lon_0=${PACIFIC_CENTRAL_MERIDIAN} +datum=WGS84 +units=m +no_defs`
-);
-
 const MERC_HALF = 20037508.342789244;
 const EQ_HALF_X = 17243959.06;
 const EQ_GRID_FACT = MERC_HALF / EQ_HALF_X;
@@ -30,9 +23,6 @@ const EQ_GRID_FACT = MERC_HALF / EQ_HALF_X;
 /** Full Equal Earth world extent (ArcGIS tile services / simple-map). */
 export const EQUAL_EARTH_WORLD_HALF_X = 1.724_395_856_221_439e7;
 export const EQUAL_EARTH_WORLD_HALF_Y = 8_392_927.098_466_456;
-
-const EQC_HALF_X = Math.PI * 6378137.0;
-const EQC_HALF_Y = (Math.PI / 2) * 6378137.0;
 
 function mercatorPlaneToDisplayLngLat(x: number, y: number): [number, number] {
   return proj4(WEB_MERCATOR, WGS84, [x, y]) as [number, number];
@@ -75,11 +65,7 @@ export function equalEarthWorldDisplayBounds(): [[number, number], [number, numb
   ];
 }
 
-function wgs84ToPlateCarreeMeters(lon: number, lat: number): [number, number] {
-  return proj4(WGS84, "OCEANOPS_EQC", [lon, lat]) as [number, number];
-}
-
-/** Geographic WGS84 → MapLibre lng/lat used while `setProjection(mercator)` on flat modes. */
+/** Geographic WGS84 → MapLibre lng/lat used while `setProjection(mercator)` on Equal Earth. */
 export function wgs84ToDisplayLngLat(
   lon: number,
   lat: number,
@@ -93,12 +79,7 @@ export function wgs84ToDisplayLngLat(
     return mercatorPlaneToDisplayLngLat(scaled[0], scaled[1]);
   }
 
-  const eqc = wgs84ToPlateCarreeMeters(lon, lat);
-  const scaled = [
-    (eqc[0] / EQC_HALF_X) * MERC_HALF,
-    (eqc[1] / EQC_HALF_Y) * MERC_HALF,
-  ];
-  return mercatorPlaneToDisplayLngLat(scaled[0], scaled[1]);
+  return [lon, lat];
 }
 
 /** Inverse of {@link wgs84ToDisplayLngLat} for basemap export bounds. */
@@ -116,8 +97,7 @@ export function displayLngLatToWgs84(
     return proj4("OCEANOPS_EQ", WGS84, eq) as [number, number];
   }
 
-  const eqc = [(mx / MERC_HALF) * EQC_HALF_X, (my / MERC_HALF) * EQC_HALF_Y];
-  return proj4("OCEANOPS_EQC", WGS84, eqc) as [number, number];
+  return [lng, lat];
 }
 
 function transformCoords(
@@ -205,7 +185,7 @@ export function transformFeatureCollectionForDisplay(
   };
 }
 
-/** Warp GeoJSON into the current MapLibre display space (Equal Earth / Plate Carrée). */
+/** Warp GeoJSON into the current MapLibre display space (Equal Earth). */
 export function collectionForMapDisplay(
   collection: GeoJSON.FeatureCollection
 ): GeoJSON.FeatureCollection {
@@ -214,7 +194,7 @@ export function collectionForMapDisplay(
 
 /**
  * Sample WGS84 for {@link displayBoundsForWorld} — must include ±90° so the
- * Mercator display bbox spans the full projected world (plate carrée / Equal Earth).
+ * Mercator display bbox spans the full projected world (Equal Earth).
  * Omitting the poles underestimated height and made the initial fit too zoomed-in.
  */
 export function wgs84WorldSampleGrid(): [number, number][] {
@@ -237,6 +217,40 @@ export function displayBoundsForWorld(projection: ProjectionId): [[number, numbe
   let maxLng = -Infinity;
   let maxLat = -Infinity;
   for (const [lng, lat] of points) {
+    minLng = Math.min(minLng, lng);
+    minLat = Math.min(minLat, lat);
+    maxLng = Math.max(maxLng, lng);
+    maxLat = Math.max(maxLat, lat);
+  }
+  return [
+    [minLng, minLat],
+    [maxLng, maxLat],
+  ];
+}
+
+/**
+ * Tighter display-space bbox for Equal Earth: sample the projected outline more densely
+ * than {@link wgs84WorldSampleGrid} so the initial {@link fitBounds} shows the full oval
+ * (both horizontal and vertical extents) after container sizing.
+ */
+export function equalEarthWorldDisplayBoundsDense(): [[number, number], [number, number]] {
+  const pts: [number, number][] = [];
+  for (let lat = -90; lat <= 90; lat += 5) {
+    for (let lon = -180; lon <= 180; lon += 10) {
+      pts.push(wgs84ToDisplayLngLat(lon, lat, PROJECTION_EQUAL_EARTH));
+    }
+  }
+  for (let lon = -180; lon <= 180; lon += 10) {
+    for (let lat = -90; lat <= 90; lat += 5) {
+      pts.push(wgs84ToDisplayLngLat(lon, lat, PROJECTION_EQUAL_EARTH));
+    }
+  }
+  let minLng = Infinity;
+  let minLat = Infinity;
+  let maxLng = -Infinity;
+  let maxLat = -Infinity;
+  for (const [lng, lat] of pts) {
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
     minLng = Math.min(minLng, lng);
     minLat = Math.min(minLat, lat);
     maxLng = Math.max(maxLng, lng);

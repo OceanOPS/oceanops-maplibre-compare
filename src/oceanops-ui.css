@@ -190,7 +190,7 @@ body.map-embedded #mapShell {
   height: 100%;
 }
 
-/* Plate Carrée / Equal Earth view surface (matches 3D globe #0b1e42). */
+/* Equal Earth view surface (matches 3D globe #0b1e42). */
 body.flat-mapserver-basemap #map,
 body.flat-mapserver-basemap #viewDiv,
 body.flat-mapserver-basemap #viewDiv .esri-view-root,
@@ -237,7 +237,7 @@ body.flat-mapserver-basemap #viewDiv .esri-view-surface {
   outline: none;
 }
 
-/* Plate Carrée MapServer export — top shimmer + bottom pill */
+/* Equal Earth MapServer export — top shimmer + bottom pill */
 .o-mapserver-loader {
   position: absolute;
   inset: 0;

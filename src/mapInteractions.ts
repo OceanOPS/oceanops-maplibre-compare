@@ -16,6 +16,7 @@ import {
 } from "./oceanops/platformPopup";
 import { platformInspectPopupTitle, stackInspectPopupTitle } from "./oceanops/platformInspect";
 import type { ColocatedPlatformMember } from "./oceanops/colocatedPlatforms";
+import { featureAnchorLngLat } from "./featureAnchorLngLat";
 import { categoryIdFromMapLayer, interactiveLayerIds } from "./layerIds";
 import { closeMapPopup, showMapPopupPages, type MapPopupPage } from "./popupHost";
 
@@ -73,22 +74,31 @@ function pagesFromColocatedMembers(
   });
 }
 
+export type OpenFeaturePopupOptions = {
+  focusOnOpen?: boolean;
+};
+
 export async function openFeaturePopup(
   map: maplibregl.Map,
   feature: GeoJSON.Feature,
   layerId: string,
-  lngLat: { lng: number; lat: number }
+  lngLat: { lng: number; lat: number },
+  options?: OpenFeaturePopupOptions
 ): Promise<void> {
-  return popupForFeature(map, feature, layerId, lngLat);
+  return popupForFeature(map, feature, layerId, lngLat, options);
 }
 
 async function popupForFeature(
   map: maplibregl.Map,
   feature: GeoJSON.Feature,
   layerId: string,
-  lngLat: { lng: number; lat: number }
+  lngLat: { lng: number; lat: number },
+  options?: OpenFeaturePopupOptions
 ): Promise<void> {
+  const popupOpts = { focusOnOpen: options?.focusOnOpen };
   const cat = categoryForLayerId(layerId);
+  const anchor =
+    cat?.type === "line" ? lngLat : featureAnchorLngLat(feature, lngLat);
   const attrs = propsFromFeature(feature);
 
   if (layerId === "mooring_stacks-layer") {
@@ -96,8 +106,9 @@ async function popupForFeature(
     if (members.length >= 2) {
       showMapPopupPages({
         map,
-        lngLat,
+        lngLat: anchor,
         pages: pagesFromStackMembers(members, attrs),
+        ...popupOpts,
       });
       return;
     }
@@ -105,19 +116,20 @@ async function popupForFeature(
       const only = members[0]!;
       showMapPopupPages({
         map,
-        lngLat,
+        lngLat: anchor,
         pages: [
           {
             title: platformInspectTitleForLayer(only.layer_id, attrs),
             html: buildPlatformInspectPopupHtml(only.layer_id, attrs),
           },
         ],
+        ...popupOpts,
       });
       return;
     }
     showMapPopupPages({
       map,
-      lngLat,
+      lngLat: anchor,
       pages: [
         {
           title: stackInspectPopupTitle(
@@ -128,6 +140,7 @@ async function popupForFeature(
           html: buildPlatformInspectPopupHtml("moored_buoys", attrs),
         },
       ],
+      ...popupOpts,
     });
     return;
   }
@@ -139,8 +152,9 @@ async function popupForFeature(
     const html = await buildLinePopupHtmlForCategory(cat, attrs);
     showMapPopupPages({
       map,
-      lngLat,
+      lngLat: anchor,
       pages: [{ title, html }],
+      ...popupOpts,
     });
     return;
   }
@@ -149,31 +163,19 @@ async function popupForFeature(
   const html = buildPlatformInspectPopupHtml(cat.id, attrs);
   showMapPopupPages({
     map,
-    lngLat,
+    lngLat: anchor,
     pages: [{ title, html }],
+    ...popupOpts,
   });
 }
 
-const HIT_PAD_PX = 10;
-
-function queryBox(point: maplibregl.Point): [[number, number], [number, number]] {
-  return [
-    [point.x - HIT_PAD_PX, point.y - HIT_PAD_PX],
-    [point.x + HIT_PAD_PX, point.y + HIT_PAD_PX],
-  ];
-}
-
-function pickFeaturesAtPoint(
-  map: maplibregl.Map,
-  point: maplibregl.Point
+function collectHitsFromRendered(
+  rendered: maplibregl.MapGeoJSONFeature[]
 ): Array<{ feature: GeoJSON.Feature; layerId: string }> {
-  const layers = interactiveLayerIds().filter((id) => map.getLayer(id));
-  const rendered = map.queryRenderedFeatures(queryBox(point), { layers });
   const out: Array<{ feature: GeoJSON.Feature; layerId: string }> = [];
   const seen = new Set<string>();
-
   for (const f of rendered) {
-    const layerId = f.layer.id;
+    const layerId = f.layer?.id;
     if (!layerId || seen.has(layerId)) continue;
     seen.add(layerId);
     out.push({ feature: f as unknown as GeoJSON.Feature, layerId });
@@ -181,18 +183,24 @@ function pickFeaturesAtPoint(
   return out;
 }
 
-export function bindMapInteractions(map: maplibregl.Map): void {
-  const layerIds = () => interactiveLayerIds().filter((id) => map.getLayer(id));
+/** Point-only pick for clicks — icons/markers/lines under the cursor, not nearby geometry. */
+function pickFeaturesAtClick(
+  map: maplibregl.Map,
+  point: maplibregl.Point
+): Array<{ feature: GeoJSON.Feature; layerId: string }> {
+  const layers = interactiveLayerIds().filter((id) => map.getLayer(id));
+  const rendered = map.queryRenderedFeatures(point, { layers });
+  return collectHitsFromRendered(rendered);
+}
 
+export function bindMapInteractions(map: maplibregl.Map): void {
   map.on("mousemove", (e) => {
-    const hits = map.queryRenderedFeatures(queryBox(e.point), {
-      layers: layerIds(),
-    });
+    const hits = pickFeaturesAtClick(map, e.point);
     map.getCanvas().style.cursor = hits.length ? "pointer" : "";
   });
 
   map.on("click", (e) => {
-    const hits = pickFeaturesAtPoint(map, e.point);
+    const hits = pickFeaturesAtClick(map, e.point);
     if (hits.length === 0) {
       closeMapPopup();
       return;
@@ -224,15 +232,17 @@ export function bindMapInteractions(map: maplibregl.Map): void {
         const id = categoryIdFromMapLayer(h.layerId)!;
         attrsByLayer.set(id, propsFromFeature(h.feature));
       }
+      const anchor = featureAnchorLngLat(pointHits[0]!.feature, e.lngLat);
       showMapPopupPages({
         map,
-        lngLat: e.lngLat,
+        lngLat: anchor,
         pages: pagesFromColocatedMembers(members, attrsByLayer),
       });
       return;
     }
 
     const top = pointHits[0] ?? hits[0]!;
-    void popupForFeature(map, top.feature, top.layerId, e.lngLat);
+    const anchor = featureAnchorLngLat(top.feature, e.lngLat);
+    void popupForFeature(map, top.feature, top.layerId, anchor);
   });
 }

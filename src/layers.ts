@@ -18,17 +18,15 @@ import { pointMarkerIconSize, shipIconSize } from "./mapSymbolSize";
 import {
   PROJECTION_3D_GLOBE,
   PROJECTION_EQUAL_EARTH,
-  PROJECTION_PLATE_CARREE_PACIFIC,
   type ProjectionId,
 } from "./projections";
 
 const LINE_LAYER_IDS = new Set(["goship", "oceantrax"]);
 
-export type MapProjectionMode = "globe" | "plate-carree" | "equal-earth";
+export type MapProjectionMode = "globe" | "equal-earth";
 
 export const MAP_PROJECTION_CYCLE: readonly MapProjectionMode[] = [
   "globe",
-  "plate-carree",
   "equal-earth",
 ];
 
@@ -41,8 +39,6 @@ export function mapProjectionLabel(mode: MapProjectionMode): string {
   switch (mode) {
     case "globe":
       return "3D Globe";
-    case "plate-carree":
-      return "Plate Carrée (150°W)";
     case "equal-earth":
       return "Equal Earth (150°W)";
   }
@@ -53,8 +49,6 @@ export function toProjectionId(mode: MapProjectionMode): ProjectionId {
   switch (mode) {
     case "equal-earth":
       return PROJECTION_EQUAL_EARTH;
-    case "plate-carree":
-      return PROJECTION_PLATE_CARREE_PACIFIC;
     default:
       return PROJECTION_3D_GLOBE;
   }
@@ -234,6 +228,7 @@ export async function addCategoryLayer(
       layout: {
         "icon-image": iconId,
         "icon-size": shipIconSize,
+        "icon-anchor": "center",
         "icon-pitch-alignment": "map",
         "icon-rotation-alignment": "map",
         "icon-allow-overlap": true,
@@ -253,6 +248,7 @@ export async function addCategoryLayer(
       layout: {
         "icon-image": markerId,
         "icon-size": pointMarkerIconSize,
+        "icon-anchor": "center",
         "icon-pitch-alignment": "map",
         "icon-rotation-alignment": "map",
         "icon-allow-overlap": true,
