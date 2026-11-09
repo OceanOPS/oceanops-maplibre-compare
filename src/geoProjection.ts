@@ -1,6 +1,11 @@
 import proj4 from "proj4";
 import { getMapProjection } from "./mapProjectionState";
 import {
+  normalizeLongitudeForPacificView,
+  prepareLineVerticesForFlatProjection,
+  splitLineInDisplaySpace,
+} from "./pacificLineGeometry";
+import {
   PACIFIC_CENTRAL_MERIDIAN,
   PROJECTION_3D_GLOBE,
   PROJECTION_EQUAL_EARTH,
@@ -107,12 +112,43 @@ function transformCoords(
 ): GeoJSON.Position {
   const fn = forward ? wgs84ToDisplayLngLat : displayLngLatToWgs84;
   if (coords.length >= 2 && typeof coords[0] === "number" && typeof coords[1] === "number") {
-    const [lng, lat] = fn(coords[0], coords[1], projection);
+    const lon = forward && projection !== PROJECTION_3D_GLOBE
+      ? normalizeLongitudeForPacificView(coords[0])
+      : coords[0];
+    const [lng, lat] = fn(lon, coords[1], projection);
     const out: GeoJSON.Position = [lng, lat];
     if (coords.length > 2) out.push(coords[2] as number);
     return out;
   }
   return coords;
+}
+
+function warpLinesForFlatMap(
+  geometry: GeoJSON.LineString | GeoJSON.MultiLineString,
+  projection: ProjectionId
+): GeoJSON.LineString | GeoJSON.MultiLineString {
+  const inputLines =
+    geometry.type === "LineString" ? [geometry.coordinates] : geometry.coordinates;
+  const displayParts: GeoJSON.Position[][] = [];
+
+  for (const line of inputLines) {
+    for (const geoPart of prepareLineVerticesForFlatProjection(line)) {
+      const display = geoPart.map((c) => transformCoords(c, projection, true));
+      for (const segment of splitLineInDisplaySpace(display)) {
+        displayParts.push(segment);
+      }
+    }
+  }
+
+  if (displayParts.length === 0) {
+    return geometry.type === "LineString"
+      ? { type: "LineString", coordinates: [] }
+      : { type: "MultiLineString", coordinates: [] };
+  }
+  if (displayParts.length === 1) {
+    return { type: "LineString", coordinates: displayParts[0]! };
+  }
+  return { type: "MultiLineString", coordinates: displayParts };
 }
 
 function transformGeometry(
@@ -134,17 +170,21 @@ function transformGeometry(
         coordinates: geometry.coordinates.map((c) => transformCoords(c, projection, forward)),
       };
     case "LineString":
-      return {
-        type: "LineString",
-        coordinates: geometry.coordinates.map((c) => transformCoords(c, projection, forward)),
-      };
+      return forward
+        ? warpLinesForFlatMap(geometry, projection)
+        : {
+            type: "LineString",
+            coordinates: geometry.coordinates.map((c) => transformCoords(c, projection, forward)),
+          };
     case "MultiLineString":
-      return {
-        type: "MultiLineString",
-        coordinates: geometry.coordinates.map((line) =>
-          line.map((c) => transformCoords(c, projection, forward))
-        ),
-      };
+      return forward
+        ? warpLinesForFlatMap(geometry, projection)
+        : {
+            type: "MultiLineString",
+            coordinates: geometry.coordinates.map((line) =>
+              line.map((c) => transformCoords(c, projection, forward))
+            ),
+          };
     case "Polygon":
       return {
         type: "Polygon",

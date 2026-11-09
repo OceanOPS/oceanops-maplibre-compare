@@ -1,17 +1,14 @@
 import type maplibregl from "maplibre-gl";
 import type { BasemapKind } from "./basemap";
 import {
-  displayLngLatToWgs84,
   EQUAL_EARTH_MAPSERVER_WKT,
   EQUAL_EARTH_WORLD_HALF_X,
   EQUAL_EARTH_WORLD_HALF_Y,
   equalEarthWorldDisplayCoordinates,
   paintNavyOutsideEqualEarth,
-  wgs84BboxToEqualEarthMeters,
   type EqualEarthMeterExtent,
 } from "./geoProjection";
 import { getMapProjection } from "./mapProjectionState";
-import { getEqualEarthFitZoom } from "./projectionLayout";
 import {
   isCustomFlatBasemapProjection,
   isEqualEarthProjection,
@@ -101,30 +98,6 @@ export function equalEarthWorldExportUrl(kind: BasemapKind): string {
   );
 }
 
-function wgs84BboxFromDisplayBounds(
-  bounds: maplibregl.LngLatBounds,
-  projection: ProjectionId
-): { west: number; south: number; east: number; north: number } {
-  const corners = [
-    bounds.getNorthWest(),
-    bounds.getNorthEast(),
-    bounds.getSouthEast(),
-    bounds.getSouthWest(),
-  ];
-  let west = Infinity;
-  let south = Infinity;
-  let east = -Infinity;
-  let north = -Infinity;
-  for (const c of corners) {
-    const [lon, lat] = displayLngLatToWgs84(c.lng, c.lat, projection);
-    west = Math.min(west, lon);
-    south = Math.min(south, lat);
-    east = Math.max(east, lon);
-    north = Math.max(north, lat);
-  }
-  return { west, south, east, north };
-}
-
 function firstNonBackgroundLayerId(map: maplibregl.Map): string | undefined {
   return map.getStyle().layers.find((layer) => layer.id !== "background")?.id;
 }
@@ -166,12 +139,6 @@ function setFlatBasemapVisibility(map: maplibregl.Map, visible: boolean): void {
   if (map.getLayer(FLAT_BASEMAP_LAYER_ID)) {
     map.setLayoutProperty(FLAT_BASEMAP_LAYER_ID, "visibility", visible ? "visible" : "none");
   }
-}
-
-function isWorldScaleView(map: maplibregl.Map): boolean {
-  const fitted = getEqualEarthFitZoom();
-  const worldZoom = fitted ?? map.getMinZoom();
-  return map.getZoom() <= worldZoom + 0.25;
 }
 
 const decodedByUrl = new Map<string, Promise<string>>();
@@ -296,20 +263,6 @@ export function prefetchEqualEarthBasemaps(kind: BasemapKind = "map"): void {
   void preloadBasemapImage(equalEarthWorldExportUrl(kind), EQUAL_EARTH_WORLD_EXTENT);
 }
 
-function viewportCoordinates(map: maplibregl.Map): ImageCoordinates {
-  const bounds = map.getBounds();
-  const nw = bounds.getNorthWest();
-  const ne = bounds.getNorthEast();
-  const se = bounds.getSouthEast();
-  const sw = bounds.getSouthWest();
-  return [
-    [nw.lng, nw.lat],
-    [ne.lng, ne.lat],
-    [se.lng, se.lat],
-    [sw.lng, sw.lat],
-  ];
-}
-
 export function syncBasemapModeForProjection(
   map: maplibregl.Map,
   projection: ProjectionId,
@@ -331,46 +284,15 @@ export async function refreshFlatBasemapImage(
   kind: BasemapKind
 ): Promise<void> {
   const projection = getMapProjection();
-  if (!isCustomFlatBasemapProjection(projection)) {
+  if (!isEqualEarthProjection(projection)) {
     setBasemapLoaderVisible(false);
     return;
   }
 
-  const canvas = map.getCanvas();
-  let url: string;
-  let coordinates: ImageCoordinates;
-  let equalEarthExtent: EqualEarthMeterExtent | undefined;
-
-  if (isEqualEarthProjection(projection) && isWorldScaleView(map)) {
-    url = equalEarthWorldExportUrl(kind);
-    equalEarthExtent = EQUAL_EARTH_WORLD_EXTENT;
-    // Must pin the full-world Equal Earth export to the warped quadrilateral in
-    // display space — not the rectangular map viewport (that stretched the image
-    // over the screen and broke alignment with layers / tile basemap bleed).
-    coordinates = equalEarthWorldDisplayCoordinates();
-  } else if (isEqualEarthProjection(projection)) {
-    const bounds = map.getBounds();
-    const { west, south, east, north } = wgs84BboxFromDisplayBounds(bounds, projection);
-    const { xmin, ymin, xmax, ymax } = wgs84BboxToEqualEarthMeters(
-      west,
-      south,
-      east,
-      north
-    );
-    equalEarthExtent = { xmin, ymin, xmax, ymax };
-    url = equalEarthExportUrl(
-      kind,
-      xmin,
-      ymin,
-      xmax,
-      ymax,
-      canvas.clientWidth,
-      canvas.clientHeight
-    );
-    coordinates = viewportCoordinates(map);
-  } else {
-    return;
-  }
+  const url = equalEarthWorldExportUrl(kind);
+  const equalEarthExtent = EQUAL_EARTH_WORLD_EXTENT;
+  // Pin the cached world export to the warped quadrilateral (zoom/pan do not refetch).
+  const coordinates = equalEarthWorldDisplayCoordinates();
 
   if (url === appliedUrl && map.getLayer(FLAT_BASEMAP_LAYER_ID)) {
     setGlobeRasterLayersHidden(map);
@@ -408,17 +330,10 @@ export async function refreshFlatBasemapImage(
   setBasemapLoaderVisible(false);
 }
 
-let moveTimer: ReturnType<typeof setTimeout> | null = null;
-
 export function bindFlatBasemapRefresh(map: maplibregl.Map, getKind: () => BasemapKind): void {
-  const schedule = () => {
-    if (!isCustomFlatBasemapProjection(getMapProjection())) return;
-    if (moveTimer) clearTimeout(moveTimer);
-    moveTimer = setTimeout(() => {
-      moveTimer = null;
-      void refreshFlatBasemapImage(map, getKind());
-    }, 200);
-  };
-  map.on("moveend", schedule);
-  map.on("resize", schedule);
+  map.on("resize", () => {
+    if (!isEqualEarthProjection(getMapProjection())) return;
+    if (appliedUrl && map.getLayer(FLAT_BASEMAP_LAYER_ID)) return;
+    void refreshFlatBasemapImage(map, getKind());
+  });
 }

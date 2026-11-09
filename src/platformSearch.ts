@@ -2,6 +2,8 @@ import type maplibregl from "maplibre-gl";
 import { categories, getLayerDisplayLabel } from "./categories";
 import { getRawLayerGeoJson } from "./geoJsonCountryFilter";
 import { wgs84ToDisplayLngLat } from "./geoProjection";
+import { pacificBoundsForLine } from "./pacificLineGeometry";
+import { PROJECTION_EQUAL_EARTH } from "./projections";
 import type { MapProjectionMode } from "./layers";
 import { getMapProjection } from "./mapProjectionState";
 import { openFeaturePopup } from "./mapInteractions";
@@ -487,6 +489,24 @@ function navigationTarget(
 
   const path = longestLineCoords(geometry);
   if (!path || path.length === 0) return null;
+
+  const flat = getMapProjection() === PROJECTION_EQUAL_EARTH;
+  const box = flat ? pacificBoundsForLine(path) : null;
+  if (box) {
+    const padLon = Math.max(3, (box.east - box.west) * 0.12);
+    const latSpan = box.north - box.south;
+    const padLat = Math.max(2, (latSpan || 4) * 0.25);
+    return {
+      popup: {
+        lng: (box.west + box.east) / 2,
+        lat: (box.south + box.north) / 2,
+      },
+      bounds: [
+        [box.west - padLon, box.south - padLat],
+        [box.east + padLon, box.north + padLat],
+      ],
+    };
+  }
 
   let minLng = Infinity;
   let minLat = Infinity;
