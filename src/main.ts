@@ -43,6 +43,11 @@ import {
 } from "./projectionLayout";
 import { is3dProjection } from "./projections";
 import { ensureBasemapLoader } from "./basemapLoader";
+import {
+  disableGlobeTerrain,
+  enableGlobeTerrain,
+  GLOBE_TERRAIN_PITCH_DEG,
+} from "./globeTerrain";
 import "./mapPopupStyles.css";
 import "./maplibre-overrides.css";
 
@@ -70,7 +75,7 @@ const map = new maplibregl.Map({
   style: emptyStyle(),
   center: [-150, 10],
   zoom: 2.7,
-  pitch: 0,
+  pitch: GLOBE_TERRAIN_PITCH_DEG,
   bearing: 0,
   attributionControl: false,
   scrollZoom: false,
@@ -80,7 +85,7 @@ map.addControl(
   new maplibregl.NavigationControl({
     showZoom: true,
     showCompass: true,
-    visualizePitch: false,
+    visualizePitch: true,
   }),
   "top-left"
 );
@@ -221,6 +226,7 @@ async function applyProjection(mode: MapProjectionMode): Promise<void> {
     // through to markers on the far side during fast spins.
     if ("setFog" in map && typeof map.setFog === "function") map.setFog(null);
     map.setProjection({ type: "globe" });
+    enableGlobeTerrain(map);
     applyProjectionViewConstraints(map, projection, {
       resetCamera: leavingEqualEarth,
     });
@@ -228,6 +234,7 @@ async function applyProjection(mode: MapProjectionMode): Promise<void> {
     startGlobeRotation();
   } else {
     stopGlobeRotation();
+    disableGlobeTerrain(map);
     if ("setFog" in map && typeof map.setFog === "function") map.setFog(null);
     map.setProjection({ type: "mercator" });
     applyProjectionViewConstraints(map, projection, {
