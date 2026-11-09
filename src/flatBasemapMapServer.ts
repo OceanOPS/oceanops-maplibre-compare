@@ -4,17 +4,27 @@ import {
   EQUAL_EARTH_MAPSERVER_WKT,
   EQUAL_EARTH_WORLD_HALF_X,
   EQUAL_EARTH_WORLD_HALF_Y,
+  displayLngLatToWgs84,
+  equalEarthMetersExtentToDisplayCoordinates,
   equalEarthWorldDisplayCoordinates,
   paintNavyOutsideEqualEarth,
+  wgs84BboxToEqualEarthMeters,
   type EqualEarthMeterExtent,
 } from "./geoProjection";
 import { getMapProjection } from "./mapProjectionState";
+import { getEqualEarthFitZoom } from "./projectionLayout";
 import {
   isCustomFlatBasemapProjection,
   isEqualEarthProjection,
+  PROJECTION_EQUAL_EARTH,
   type ProjectionId,
 } from "./projections";
-import { setBasemapLoaderProgress, setBasemapLoaderVisible } from "./basemapLoader";
+import {
+  beginBasemapWorldLoad,
+  beginBasemapZoomLoad,
+  endBasemapLayerLoad,
+  resetBasemapLoader,
+} from "./basemapLoader";
 
 export const OCEAN_MAP_SERVER =
   "https://services.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer";
@@ -22,8 +32,12 @@ export const OCEAN_MAP_SERVER =
 export const SATELLITE_MAP_SERVER =
   "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer";
 
-const FLAT_BASEMAP_SOURCE_ID = "flat-basemap-image";
-const FLAT_BASEMAP_LAYER_ID = "flat-basemap-image";
+/** Cached full-world Equal Earth image — always kept when zooming. */
+const FLAT_WORLD_SOURCE_ID = "flat-basemap-world";
+const FLAT_WORLD_LAYER_ID = "flat-basemap-world";
+/** High-res viewport export stacked above the world layer while zoomed in. */
+const FLAT_DETAIL_SOURCE_ID = "flat-basemap-detail";
+const FLAT_DETAIL_LAYER_ID = "flat-basemap-detail";
 const MAX_EXPORT_SIZE = 2048;
 const WORLD_EXPORT_WIDTH = 2048;
 const WORLD_EXPORT_HEIGHT = Math.max(
@@ -98,34 +112,71 @@ export function equalEarthWorldExportUrl(kind: BasemapKind): string {
   );
 }
 
-function firstNonBackgroundLayerId(map: maplibregl.Map): string | undefined {
-  return map.getStyle().layers.find((layer) => layer.id !== "background")?.id;
+const FLAT_BASEMAP_LAYER_IDS = new Set([FLAT_WORLD_LAYER_ID, FLAT_DETAIL_LAYER_ID]);
+
+/** First layer that is not background or our flat basemap stack (so inserts stay below data). */
+function anchorBelowDataLayerId(map: maplibregl.Map): string | undefined {
+  return map.getStyle().layers.find(
+    (layer) => layer.id !== "background" && !FLAT_BASEMAP_LAYER_IDS.has(layer.id)
+  )?.id;
 }
 
-function ensureFlatBasemapLayer(
+function ensureImageRasterLayer(
   map: maplibregl.Map,
+  sourceId: string,
+  layerId: string,
   url: string,
-  coordinates: ImageCoordinates
+  coordinates: ImageCoordinates,
+  insertBefore?: string
 ): maplibregl.ImageSource | undefined {
-  if (!map.getSource(FLAT_BASEMAP_SOURCE_ID)) {
-    map.addSource(FLAT_BASEMAP_SOURCE_ID, {
+  const before = insertBefore ?? anchorBelowDataLayerId(map);
+  if (!map.getSource(sourceId)) {
+    map.addSource(sourceId, {
       type: "image",
       url,
       coordinates,
     });
   }
-  if (!map.getLayer(FLAT_BASEMAP_LAYER_ID)) {
+  if (!map.getLayer(layerId)) {
     map.addLayer(
       {
-        id: FLAT_BASEMAP_LAYER_ID,
+        id: layerId,
         type: "raster",
-        source: FLAT_BASEMAP_SOURCE_ID,
-        paint: { "raster-opacity": 1 },
+        source: sourceId,
+        paint: { "raster-opacity": 1, "raster-fade-duration": 0 },
       },
-      firstNonBackgroundLayerId(map)
+      before
     );
   }
-  return map.getSource(FLAT_BASEMAP_SOURCE_ID) as maplibregl.ImageSource | undefined;
+  return map.getSource(sourceId) as maplibregl.ImageSource | undefined;
+}
+
+/** World then detail, both directly under observatory layers. */
+function stackFlatBasemapLayers(map: maplibregl.Map): void {
+  const before = anchorBelowDataLayerId(map);
+  if (!before) return;
+  if (map.getLayer(FLAT_WORLD_LAYER_ID)) {
+    map.moveLayer(FLAT_WORLD_LAYER_ID, before);
+  }
+  if (map.getLayer(FLAT_DETAIL_LAYER_ID)) {
+    map.moveLayer(FLAT_DETAIL_LAYER_ID, before);
+  }
+}
+
+function showWorldBasemapOnly(map: maplibregl.Map): void {
+  setLayerVisible(map, FLAT_WORLD_LAYER_ID, true);
+  setLayerVisible(map, FLAT_DETAIL_LAYER_ID, false);
+}
+
+function showDetailBasemapOnly(map: maplibregl.Map): void {
+  stackFlatBasemapLayers(map);
+  setLayerVisible(map, FLAT_WORLD_LAYER_ID, false);
+  setLayerVisible(map, FLAT_DETAIL_LAYER_ID, true);
+}
+
+function setLayerVisible(map: maplibregl.Map, layerId: string, visible: boolean): void {
+  if (!map.getLayer(layerId)) return;
+  map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
 }
 
 function setGlobeRasterLayersHidden(map: maplibregl.Map): void {
@@ -136,14 +187,29 @@ function setGlobeRasterLayersHidden(map: maplibregl.Map): void {
 }
 
 function setFlatBasemapVisibility(map: maplibregl.Map, visible: boolean): void {
-  if (map.getLayer(FLAT_BASEMAP_LAYER_ID)) {
-    map.setLayoutProperty(FLAT_BASEMAP_LAYER_ID, "visibility", visible ? "visible" : "none");
-  }
+  setLayerVisible(map, FLAT_WORLD_LAYER_ID, visible);
+  setLayerVisible(map, FLAT_DETAIL_LAYER_ID, visible);
+}
+
+function setDetailBasemapVisible(map: maplibregl.Map, visible: boolean): void {
+  if (visible) showDetailBasemapOnly(map);
+  else setLayerVisible(map, FLAT_DETAIL_LAYER_ID, false);
 }
 
 const decodedByUrl = new Map<string, Promise<string>>();
-let appliedUrl: string | null = null;
+let appliedWorldKind: BasemapKind | null = null;
+/** Display URL for the cached world layer (object URL from navy compositing). */
+let appliedWorldDisplayUrl: string | null = null;
+/** Last viewport detail key applied on the detail layer. */
+let appliedDetailKey: string | null = null;
 let refreshGeneration = 0;
+let viewRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Any zoom above fit + this requests a viewport MapServer export. */
+const WORLD_ZOOM_MARGIN = 0.05;
+/** Fallback until Equal Earth fitBounds has set {@link getEqualEarthFitZoom}. */
+const DEFAULT_EQUAL_EARTH_FIT_ZOOM = 2.7;
+const VIEW_REFRESH_DEBOUNCE_MS = 350;
 
 function loadHtmlImageFromObjectUrl(objectUrl: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -198,16 +264,12 @@ async function fetchImageBlobWithProgress(
 
 async function navyEqualEarthDisplayUrl(
   url: string,
-  extent: EqualEarthMeterExtent,
-  onProgress?: (percent: number | null) => void
+  extent: EqualEarthMeterExtent
 ): Promise<string> {
-  const imageBlob = await fetchImageBlobWithProgress(url, (p) => {
-    onProgress?.(p);
-  });
+  const imageBlob = await fetchImageBlobWithProgress(url, () => {});
   const imageObjectUrl = URL.createObjectURL(imageBlob);
   let img: HTMLImageElement;
   try {
-    onProgress?.(null);
     img = await loadHtmlImageFromObjectUrl(imageObjectUrl);
   } finally {
     URL.revokeObjectURL(imageObjectUrl);
@@ -217,7 +279,6 @@ async function navyEqualEarthDisplayUrl(
   canvas.height = img.naturalHeight;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) {
-    onProgress?.(100);
     return url;
   }
   ctx.fillStyle = "#0b1e42";
@@ -229,26 +290,20 @@ async function navyEqualEarthDisplayUrl(
   const pngBlob = await new Promise<Blob | null>((resolve) => {
     canvas.toBlob(resolve, "image/png");
   });
-  onProgress?.(100);
   return pngBlob ? URL.createObjectURL(pngBlob) : url;
 }
 
 function preloadBasemapImage(
   url: string,
-  equalEarthExtent?: EqualEarthMeterExtent,
-  onProgress?: (percent: number | null) => void
+  equalEarthExtent?: EqualEarthMeterExtent
 ): Promise<string> {
   const hit = decodedByUrl.get(url);
-  if (hit) {
-    onProgress?.(100);
-    return hit;
-  }
+  if (hit) return hit;
   const pending = (async () => {
     try {
       if (equalEarthExtent) {
-        return await navyEqualEarthDisplayUrl(url, equalEarthExtent, onProgress);
+        return await navyEqualEarthDisplayUrl(url, equalEarthExtent);
       }
-      onProgress?.(100);
       return url;
     } catch (error) {
       decodedByUrl.delete(url);
@@ -259,8 +314,117 @@ function preloadBasemapImage(
   return pending;
 }
 
-export function prefetchEqualEarthBasemaps(kind: BasemapKind = "map"): void {
-  void preloadBasemapImage(equalEarthWorldExportUrl(kind), EQUAL_EARTH_WORLD_EXTENT);
+function mapViewportWgs84Bbox(map: maplibregl.Map): {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+} {
+  const b = map.getBounds();
+  const corners: [number, number][] = [
+    [b.getWest(), b.getNorth()],
+    [b.getEast(), b.getNorth()],
+    [b.getEast(), b.getSouth()],
+    [b.getWest(), b.getSouth()],
+  ];
+  let west = Infinity;
+  let south = Infinity;
+  let east = -Infinity;
+  let north = -Infinity;
+  for (const [lng, lat] of corners) {
+    const [lon, la] = displayLngLatToWgs84(lng, lat, PROJECTION_EQUAL_EARTH);
+    west = Math.min(west, lon);
+    south = Math.min(south, la);
+    east = Math.max(east, lon);
+    north = Math.max(north, la);
+  }
+  return { west, south, east, north };
+}
+
+function exportPixelSize(map: maplibregl.Map): { width: number; height: number } {
+  const canvas = map.getCanvas();
+  const dpr = Math.min(2.5, Math.max(1, window.devicePixelRatio || 1));
+  const width = Math.min(
+    MAX_EXPORT_SIZE,
+    Math.max(640, Math.round(canvas.clientWidth * dpr))
+  );
+  const height = Math.min(
+    MAX_EXPORT_SIZE,
+    Math.max(480, Math.round(canvas.clientHeight * dpr))
+  );
+  return { width, height };
+}
+
+function useWorldExtentBasemap(map: maplibregl.Map): boolean {
+  const fit = getEqualEarthFitZoom() ?? DEFAULT_EQUAL_EARTH_FIT_ZOOM;
+  return map.getZoom() <= fit + WORLD_ZOOM_MARGIN;
+}
+
+type ViewportBasemapRequest = {
+  key: string;
+  url: string;
+  extent: EqualEarthMeterExtent;
+  coordinates: ImageCoordinates;
+};
+
+function resolveViewportBasemapRequest(
+  map: maplibregl.Map,
+  kind: BasemapKind
+): ViewportBasemapRequest {
+  const { west, south, east, north } = mapViewportWgs84Bbox(map);
+  const extent = wgs84BboxToEqualEarthMeters(west, south, east, north);
+  const { width, height } = exportPixelSize(map);
+  const url = equalEarthExportUrl(
+    kind,
+    extent.xmin,
+    extent.ymin,
+    extent.xmax,
+    extent.ymax,
+    width,
+    height
+  );
+  const z = map.getZoom().toFixed(2);
+  const key = `${kind}:view:z${z}:${extent.xmin.toFixed(0)}:${extent.ymin.toFixed(0)}:${extent.xmax.toFixed(0)}:${extent.ymax.toFixed(0)}:${width}x${height}`;
+  return {
+    key,
+    url,
+    extent,
+    coordinates: equalEarthMetersExtentToDisplayCoordinates(extent),
+  };
+}
+
+function worldBasemapOnMap(map: maplibregl.Map, kind: BasemapKind): boolean {
+  return (
+    appliedWorldKind === kind &&
+    appliedWorldDisplayUrl != null &&
+    Boolean(map.getLayer(FLAT_WORLD_LAYER_ID))
+  );
+}
+
+async function ensureWorldBasemap(map: maplibregl.Map, kind: BasemapKind): Promise<void> {
+  const coordinates = equalEarthWorldDisplayCoordinates();
+  const exportUrl = equalEarthWorldExportUrl(kind);
+  const displayUrl = await preloadBasemapImage(exportUrl, EQUAL_EARTH_WORLD_EXTENT);
+  const hadSource = Boolean(map.getSource(FLAT_WORLD_SOURCE_ID));
+  const source = ensureImageRasterLayer(
+    map,
+    FLAT_WORLD_SOURCE_ID,
+    FLAT_WORLD_LAYER_ID,
+    displayUrl,
+    coordinates
+  );
+  if (!source) return;
+  if (hadSource) source.updateImage({ url: displayUrl, coordinates });
+  appliedWorldKind = kind;
+  appliedWorldDisplayUrl = displayUrl;
+  stackFlatBasemapLayers(map);
+  setLayerVisible(map, FLAT_WORLD_LAYER_ID, true);
+}
+
+export function prefetchEqualEarthBasemaps(_kind?: BasemapKind): void {
+  for (const kind of ["map", "satellite"] as const) {
+    void preloadBasemapImage(equalEarthWorldExportUrl(kind), EQUAL_EARTH_WORLD_EXTENT);
+  }
 }
 
 export function syncBasemapModeForProjection(
@@ -275,7 +439,7 @@ export function syncBasemapModeForProjection(
     void refreshFlatBasemapImage(map, kind);
   } else {
     setFlatBasemapVisibility(map, false);
-    setBasemapLoaderVisible(false);
+    resetBasemapLoader();
   }
 }
 
@@ -285,55 +449,113 @@ export async function refreshFlatBasemapImage(
 ): Promise<void> {
   const projection = getMapProjection();
   if (!isEqualEarthProjection(projection)) {
-    setBasemapLoaderVisible(false);
+    resetBasemapLoader();
     return;
   }
 
-  const url = equalEarthWorldExportUrl(kind);
-  const equalEarthExtent = EQUAL_EARTH_WORLD_EXTENT;
-  // Pin the cached world export to the warped quadrilateral (zoom/pan do not refetch).
-  const coordinates = equalEarthWorldDisplayCoordinates();
+  setGlobeRasterLayersHidden(map);
 
-  if (url === appliedUrl && map.getLayer(FLAT_BASEMAP_LAYER_ID)) {
-    setGlobeRasterLayersHidden(map);
-    setFlatBasemapVisibility(map, true);
-    setBasemapLoaderVisible(false);
+  const needsWorld = !worldBasemapOnMap(map, kind);
+  const zoomedIn = !useWorldExtentBasemap(map);
+  const request = zoomedIn ? resolveViewportBasemapRequest(map, kind) : null;
+  const needsDetail =
+    zoomedIn &&
+    request != null &&
+    !(request.key === appliedDetailKey && map.getLayer(FLAT_DETAIL_LAYER_ID));
+
+  if (needsWorld) {
+    beginBasemapWorldLoad();
+    try {
+      await ensureWorldBasemap(map, kind);
+    } catch (error) {
+      console.warn(error);
+      return;
+    } finally {
+      endBasemapLayerLoad();
+    }
+  } else if (!zoomedIn) {
+    setLayerVisible(map, FLAT_WORLD_LAYER_ID, true);
+  }
+
+  if (!zoomedIn) {
+    showWorldBasemapOnly(map);
+    appliedDetailKey = null;
     return;
   }
 
-  setBasemapLoaderVisible(true);
-  setBasemapLoaderProgress(null);
+  if (!needsDetail) {
+    showDetailBasemapOnly(map);
+    return;
+  }
+
+  showWorldBasemapOnly(map);
+  const loadZoom = map.getZoom();
+  beginBasemapZoomLoad(loadZoom);
   const generation = ++refreshGeneration;
-  let displayUrl: string;
   try {
-    displayUrl = await preloadBasemapImage(url, equalEarthExtent, (p) =>
-      setBasemapLoaderProgress(p)
+    const displayUrl = await preloadBasemapImage(request.url, request.extent);
+    if (generation !== refreshGeneration) return;
+    if (getMapProjection() !== projection) return;
+    if (useWorldExtentBasemap(map)) return;
+
+    const hadSource = Boolean(map.getSource(FLAT_DETAIL_SOURCE_ID));
+    const source = ensureImageRasterLayer(
+      map,
+      FLAT_DETAIL_SOURCE_ID,
+      FLAT_DETAIL_LAYER_ID,
+      displayUrl,
+      request.coordinates
     );
+    if (!source) return;
+    if (hadSource) source.updateImage({ url: displayUrl, coordinates: request.coordinates });
+    appliedDetailKey = request.key;
+    showDetailBasemapOnly(map);
   } catch (error) {
     console.warn(error);
-    setBasemapLoaderVisible(false);
-    return;
+  } finally {
+    endBasemapLayerLoad();
   }
-  if (generation !== refreshGeneration) return;
-  if (getMapProjection() !== projection) return;
+}
 
-  const hadSource = Boolean(map.getSource(FLAT_BASEMAP_SOURCE_ID));
-  const source = ensureFlatBasemapLayer(map, displayUrl, coordinates);
-  if (!source) {
-    setBasemapLoaderVisible(false);
-    return;
+function snapToWorldBasemapIfZoomedOut(map: maplibregl.Map, kind: BasemapKind): void {
+  if (!isEqualEarthProjection(getMapProjection())) return;
+  if (!useWorldExtentBasemap(map)) return;
+  refreshGeneration += 1;
+  appliedDetailKey = null;
+  if (worldBasemapOnMap(map, kind)) {
+    showWorldBasemapOnly(map);
   }
-  if (hadSource) source.updateImage({ url: displayUrl, coordinates });
-  appliedUrl = url;
-  setGlobeRasterLayersHidden(map);
-  setFlatBasemapVisibility(map, true);
-  setBasemapLoaderVisible(false);
+}
+
+function scheduleFlatBasemapViewRefresh(map: maplibregl.Map, getKind: () => BasemapKind): void {
+  if (!isEqualEarthProjection(getMapProjection())) return;
+  if (viewRefreshTimer) clearTimeout(viewRefreshTimer);
+  viewRefreshTimer = setTimeout(() => {
+    viewRefreshTimer = null;
+    void refreshFlatBasemapImage(map, getKind());
+  }, VIEW_REFRESH_DEBOUNCE_MS);
 }
 
 export function bindFlatBasemapRefresh(map: maplibregl.Map, getKind: () => BasemapKind): void {
   map.on("resize", () => {
     if (!isEqualEarthProjection(getMapProjection())) return;
-    if (appliedUrl && map.getLayer(FLAT_BASEMAP_LAYER_ID)) return;
+    appliedDetailKey = null;
     void refreshFlatBasemapImage(map, getKind());
+  });
+  map.on("moveend", () => {
+    snapToWorldBasemapIfZoomedOut(map, getKind());
+    scheduleFlatBasemapViewRefresh(map, getKind);
+  });
+  map.on("zoom", () => {
+    if (!isEqualEarthProjection(getMapProjection())) return;
+    if (useWorldExtentBasemap(map)) {
+      snapToWorldBasemapIfZoomedOut(map, getKind());
+      return;
+    }
+    scheduleFlatBasemapViewRefresh(map, getKind);
+  });
+  map.on("zoomend", () => {
+    snapToWorldBasemapIfZoomedOut(map, getKind());
+    scheduleFlatBasemapViewRefresh(map, getKind);
   });
 }

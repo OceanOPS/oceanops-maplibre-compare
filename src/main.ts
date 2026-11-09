@@ -42,12 +42,12 @@ import {
   scheduleEqualEarthRefit,
 } from "./projectionLayout";
 import { is3dProjection } from "./projections";
-import { ensureBasemapLoader } from "./basemapLoader";
 import {
-  disableGlobeTerrain,
-  enableGlobeTerrain,
-  GLOBE_TERRAIN_PITCH_DEG,
-} from "./globeTerrain";
+  beginInitialMapLoad,
+  endInitialMapLoad,
+  ensureBasemapLoader,
+} from "./basemapLoader";
+import { disableGlobeTerrain, enableGlobeTerrain } from "./globeTerrain";
 import "./mapPopupStyles.css";
 import "./maplibre-overrides.css";
 
@@ -75,7 +75,7 @@ const map = new maplibregl.Map({
   style: emptyStyle(),
   center: [-150, 10],
   zoom: 2.7,
-  pitch: GLOBE_TERRAIN_PITCH_DEG,
+  pitch: 0,
   bearing: 0,
   attributionControl: false,
   scrollZoom: false,
@@ -85,7 +85,7 @@ map.addControl(
   new maplibregl.NavigationControl({
     showZoom: true,
     showCompass: true,
-    visualizePitch: true,
+    visualizePitch: false,
   }),
   "top-left"
 );
@@ -93,6 +93,7 @@ map.addControl(
 const shell = document.getElementById("mapShell")!;
 
 ensureBasemapLoader();
+beginInitialMapLoad();
 
 const onShellLayoutChange = () => {
   map.resize();
@@ -255,38 +256,42 @@ async function applyProjection(mode: MapProjectionMode): Promise<void> {
 }
 
 map.on("load", async () => {
-  ensureBasemapSources(map);
-  bindFlatBasemapRefresh(map, () => basemapKind);
-  prefetchEqualEarthBasemaps(basemapKind);
-  setBasemapKind(map, basemapKind);
-  await applyProjection("globe");
+  try {
+    ensureBasemapSources(map);
+    bindFlatBasemapRefresh(map, () => basemapKind);
+    prefetchEqualEarthBasemaps(basemapKind);
+    setBasemapKind(map, basemapKind);
+    await applyProjection("globe");
 
-  const mooringData = await loadMooringStackData("/");
-  await loadAllCategories(map, projectionMode, mooringData);
-  await addMooringStackLayer(map, mooringData.stackLayer);
+    const mooringData = await loadMooringStackData("/");
+    await loadAllCategories(map, projectionMode, mooringData);
+    await addMooringStackLayer(map, mooringData.stackLayer);
 
-  for (const cat of categories) {
-    if (!isCategoryVisible(cat)) setCategoryVisible(map, cat, false);
-  }
+    for (const cat of categories) {
+      if (!isCategoryVisible(cat)) setCategoryVisible(map, cat, false);
+    }
 
-  countryFilter = createCountryFilterController(map);
-  countryFilter.apply();
-  legendUi.refreshCounts();
+    countryFilter = createCountryFilterController(map);
+    countryFilter.apply();
+    legendUi.refreshCounts();
 
-  registerMapAutoMotionStop(interruptGlobeRotationFromUser);
-  bindMapInteractions(map);
-  bindGlobeRotationInterrupts();
+    registerMapAutoMotionStop(interruptGlobeRotationFromUser);
+    bindMapInteractions(map);
+    bindGlobeRotationInterrupts();
 
-  const searchAnchor = document.getElementById("platform-search-anchor");
-  if (searchAnchor) {
-    platformSearch = mountPlatformSearch({
-      shell: searchAnchor,
-      map,
-      stopRotation: () => interruptGlobeRotationFromUser(),
-      getProjection: () => projectionMode,
-    });
-    platformSearch.setOpenChangeListener(searchChrome.syncSearchButton);
-    searchChrome.syncSearchButton();
+    const searchAnchor = document.getElementById("platform-search-anchor");
+    if (searchAnchor) {
+      platformSearch = mountPlatformSearch({
+        shell: searchAnchor,
+        map,
+        stopRotation: () => interruptGlobeRotationFromUser(),
+        getProjection: () => projectionMode,
+      });
+      platformSearch.setOpenChangeListener(searchChrome.syncSearchButton);
+      searchChrome.syncSearchButton();
+    }
+  } finally {
+    endInitialMapLoad();
   }
 });
 

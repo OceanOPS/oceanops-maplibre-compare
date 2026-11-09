@@ -305,6 +305,26 @@ export function equalEarthWorldDisplayBoundsDense(): [[number, number], [number,
 /** Equal Earth MapServer spatial reference (Pacific 150°W), aligned with simple-map. */
 export const EQUAL_EARTH_MAPSERVER_WKT = `PROJCS["Equal Earth (world)_2",GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Equal_Earth"],PARAMETER["False_Easting",0.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",${PACIFIC_CENTRAL_MERIDIAN}],UNIT["Meter",1.0]]`;
 
+export function equalEarthMetersExtentToDisplayCoordinates(extent: {
+  xmin: number;
+  ymin: number;
+  xmax: number;
+  ymax: number;
+}): [
+  [number, number],
+  [number, number],
+  [number, number],
+  [number, number],
+] {
+  const { xmin, ymin, xmax, ymax } = extent;
+  return [
+    equalEarthMetersToDisplayLngLat(xmin, ymax),
+    equalEarthMetersToDisplayLngLat(xmax, ymax),
+    equalEarthMetersToDisplayLngLat(xmax, ymin),
+    equalEarthMetersToDisplayLngLat(xmin, ymin),
+  ];
+}
+
 export function wgs84BboxToEqualEarthMeters(
   west: number,
   south: number,

@@ -1,6 +1,5 @@
 import type maplibregl from "maplibre-gl";
 import { equalEarthWorldDisplayBoundsDense } from "./geoProjection";
-import { GLOBE_TERRAIN_PITCH_DEG } from "./globeTerrain";
 import {
   is3dProjection,
   isCustomFlatBasemapProjection,
@@ -91,7 +90,7 @@ export function restoreDefaultWorldView(map: maplibregl.Map): void {
     center: DEFAULT_FLAT_CENTER,
     zoom: DEFAULT_FLAT_ZOOM,
     bearing: 0,
-    pitch: GLOBE_TERRAIN_PITCH_DEG,
+    pitch: 0,
   });
 }
 

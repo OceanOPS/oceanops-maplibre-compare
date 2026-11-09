@@ -226,48 +226,4 @@ body {
   }
 }
 
-/* Equal Earth MapServer basemap loading */
-.o-basemap-loader {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-  background: rgba(11, 30, 66, 0.55);
-}
-
-.o-basemap-loader.is-visible {
-  display: flex;
-}
-
-.o-basemap-loader__inner {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-}
-
-.o-basemap-loader__percent {
-  min-height: 1.2em;
-  font-size: 14px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  color: #f8f8f8;
-}
-
-.o-basemap-loader__spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid rgba(248, 248, 248, 0.25);
-  border-top-color: #f48b25;
-  border-radius: 50%;
-  animation: o-basemap-loader-spin 0.85s linear infinite;
-}
-
-@keyframes o-basemap-loader-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* Equal Earth loader uses .o-mapserver-loader from oceanops-ui.css */

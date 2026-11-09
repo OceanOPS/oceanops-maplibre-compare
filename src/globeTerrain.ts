@@ -3,8 +3,8 @@ import type maplibregl from "maplibre-gl";
 /** Raster-dem source used by `map.setTerrain` on the 3D globe. */
 export const GLOBE_TERRAIN_DEM_SOURCE_ID = "globe-terrain-dem";
 
-/** Pitch so ridges / trenches read on the globe (auto-rotation keeps it). */
-export const GLOBE_TERRAIN_PITCH_DEG = 32;
+/** Globe camera tilt — 0 matches oceanops-simple-map SceneView. */
+export const GLOBE_TERRAIN_PITCH_DEG = 0;
 
 /**
  * Vertical scale on the terrain mesh. Ocean trenches need a high factor; JAXA land DEMs
