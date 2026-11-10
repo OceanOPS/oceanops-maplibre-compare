@@ -32,8 +32,24 @@ export const pointMarkerIconSize: ExpressionSpecification = [
   squareWorld * 1.18,
 ];
 
-/** Ship sprites (~21px tall); target ~11px like Esri globe IconSymbol3DLayer. */
-const shipWorld = iconSizeForContentPx(21, 11);
+/** TSU triangles (~18px tall in the generated sprite). Slightly smaller than squares. */
+const TRIANGLE_MARKER_CONTENT_PX = 18;
+const triangleWorld = iconSizeForContentPx(TRIANGLE_MARKER_CONTENT_PX, 8);
+
+export const triangleMarkerIconSize: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  0,
+  triangleWorld,
+  4,
+  triangleWorld * 1.08,
+  10,
+  triangleWorld * 1.15,
+];
+
+/** Ship sprites (~21px tall). */
+const shipWorld = iconSizeForContentPx(21, 9);
 
 export const shipIconSize: ExpressionSpecification = [
   "interpolate",
@@ -44,5 +60,5 @@ export const shipIconSize: ExpressionSpecification = [
   4,
   shipWorld * 1.1,
   10,
-  shipWorld * 1.22,
+  shipWorld * 1.2,
 ];

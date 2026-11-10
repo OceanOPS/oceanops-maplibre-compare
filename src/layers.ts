@@ -14,7 +14,11 @@ import {
   ensurePointMarkerImages,
   pointMarkerImageId,
 } from "./pointMarkerImages";
-import { pointMarkerIconSize, shipIconSize } from "./mapSymbolSize";
+import {
+  pointMarkerIconSize,
+  shipIconSize,
+  triangleMarkerIconSize,
+} from "./mapSymbolSize";
 import {
   PROJECTION_3D_GLOBE,
   PROJECTION_EQUAL_EARTH,
@@ -247,7 +251,10 @@ export async function addCategoryLayer(
       source: sourceId,
       layout: {
         "icon-image": markerId,
-        "icon-size": pointMarkerIconSize,
+        "icon-size":
+          cat.shape === "triangle"
+            ? triangleMarkerIconSize
+            : pointMarkerIconSize,
         "icon-anchor": "center",
         "icon-pitch-alignment": "map",
         "icon-rotation-alignment": "map",

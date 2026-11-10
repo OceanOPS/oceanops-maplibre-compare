@@ -18,7 +18,12 @@ import { platformInspectPopupTitle, stackInspectPopupTitle } from "./oceanops/pl
 import type { ColocatedPlatformMember } from "./oceanops/colocatedPlatforms";
 import { featureAnchorLngLat } from "./featureAnchorLngLat";
 import { categoryIdFromMapLayer, interactiveLayerIds } from "./layerIds";
-import { closeMapPopup, showMapPopupPages, type MapPopupPage } from "./popupHost";
+import {
+  closeMapPopup,
+  showMapPopupPages,
+  type MapPopupPage,
+  type MapSelectionStyle,
+} from "./popupHost";
 
 function propsFromFeature(
   feature: GeoJSON.Feature
@@ -58,25 +63,95 @@ function pagesFromStackMembers(members: ColocatedPlatformMember[], attrs: Record
   }));
 }
 
-function pagesFromColocatedMembers(
-  members: ColocatedPlatformMember[],
-  attrsByLayer: Map<string, Record<string, unknown>>
+/** One MapLibre hit per layer can still describe the same platform — paginate only when refs differ. */
+function uniquePlatformMembers(
+  members: ColocatedPlatformMember[]
+): ColocatedPlatformMember[] {
+  const seen = new Set<string>();
+  const out: ColocatedPlatformMember[] = [];
+  for (const member of members) {
+    const ref = member.ptf_ref.trim();
+    const key = ref || `layer:${member.layer_id}:id:${member.ptf_id ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(member);
+  }
+  return out;
+}
+
+function pagesFromColocatedHits(
+  hits: Array<{ feature: GeoJSON.Feature; layerId: string }>
 ): MapPopupPage[] {
-  return members.map((member) => {
-    const attrs = attrsByLayer.get(member.layer_id) ?? {};
-    return {
+  const pages: MapPopupPage[] = [];
+  const seen = new Set<string>();
+  for (const hit of hits) {
+    const catId = categoryIdFromMapLayer(hit.layerId);
+    if (!catId) continue;
+    const attrs = propsFromFeature(hit.feature);
+    const member = memberFromPlatformAttributes(catId, attrs);
+    const ref = member.ptf_ref.trim();
+    const key = ref || `layer:${member.layer_id}:id:${member.ptf_id ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    pages.push({
       title: memberPageTitle(member, attrs),
       html: buildPlatformInspectPopupHtml(member.layer_id, {
         ...attrs,
         ptf_ref: member.ptf_ref,
       }),
-    };
-  });
+    });
+  }
+  return pages;
+}
+
+/** Low zoom: widen pick so stacked ship icons register together. */
+const COLOCATED_PICK_MAX_ZOOM = 5.75;
+const COLOCATED_PICK_BOX_PX = 14;
+/** Paginate only when anchor pixels still overlap (dezoomed stack). */
+const COLOCATED_MERGE_MAX_SCREEN_PX = 20;
+
+function colocatedHitsOverlapOnScreen(
+  map: maplibregl.Map,
+  hits: Array<{ feature: GeoJSON.Feature; layerId: string }>,
+  fallbackLngLat: { lng: number; lat: number }
+): boolean {
+  if (hits.length < 2) return false;
+  const pixels = hits.map((h) =>
+    map.project(featureAnchorLngLat(h.feature, fallbackLngLat))
+  );
+  let maxSep = 0;
+  for (let i = 0; i < pixels.length; i++) {
+    for (let j = i + 1; j < pixels.length; j++) {
+      const dx = pixels[i]!.x - pixels[j]!.x;
+      const dy = pixels[i]!.y - pixels[j]!.y;
+      maxSep = Math.max(maxSep, Math.hypot(dx, dy));
+    }
+  }
+  return maxSep <= COLOCATED_MERGE_MAX_SCREEN_PX;
 }
 
 export type OpenFeaturePopupOptions = {
   focusOnOpen?: boolean;
 };
+
+function mapSelectionStyleForCategory(
+  cat: Category | undefined
+): MapSelectionStyle {
+  if (!cat) return "marker";
+  if (cat.type === "line") return "line";
+  if (cat.type === "image") return "leader";
+  return "marker";
+}
+
+function selectionHighlightForFeature(
+  feature: GeoJSON.Feature,
+  cat: Category | undefined
+): { highlightStyle: MapSelectionStyle; highlightFeature: GeoJSON.Feature } {
+  return {
+    highlightStyle: mapSelectionStyleForCategory(cat),
+    highlightFeature: feature,
+  };
+}
 
 export async function openFeaturePopup(
   map: maplibregl.Map,
@@ -100,15 +175,41 @@ async function popupForFeature(
   const anchor =
     cat?.type === "line" ? lngLat : featureAnchorLngLat(feature, lngLat);
   const attrs = propsFromFeature(feature);
+  const stackHighlight = {
+    highlightStyle: "marker" as const,
+    highlightFeature: feature,
+  };
+  const platformHighlight = selectionHighlightForFeature(feature, cat);
 
   if (layerId === "mooring_stacks-layer") {
     const members = parseColocatedMembersFromAttrs(attrs);
     if (members.length >= 2) {
+      const pages = pagesFromStackMembers(members, attrs);
+      if (pages.length <= 1) {
+        const only = members[0]!;
+        showMapPopupPages({
+          map,
+          lngLat: anchor,
+          pages: [
+            {
+              title: platformInspectTitleForLayer(only.layer_id, attrs),
+              html: buildPlatformInspectPopupHtml(only.layer_id, {
+                ...attrs,
+                ptf_ref: only.ptf_ref,
+              }),
+            },
+          ],
+          ...popupOpts,
+          ...stackHighlight,
+        });
+        return;
+      }
       showMapPopupPages({
         map,
         lngLat: anchor,
-        pages: pagesFromStackMembers(members, attrs),
+        pages,
         ...popupOpts,
+        ...stackHighlight,
       });
       return;
     }
@@ -124,6 +225,7 @@ async function popupForFeature(
           },
         ],
         ...popupOpts,
+        ...stackHighlight,
       });
       return;
     }
@@ -141,6 +243,7 @@ async function popupForFeature(
         },
       ],
       ...popupOpts,
+      ...stackHighlight,
     });
     return;
   }
@@ -155,6 +258,7 @@ async function popupForFeature(
       lngLat: anchor,
       pages: [{ title, html }],
       ...popupOpts,
+      ...platformHighlight,
     });
     return;
   }
@@ -166,7 +270,15 @@ async function popupForFeature(
     lngLat: anchor,
     pages: [{ title, html }],
     ...popupOpts,
+    ...platformHighlight,
   });
+}
+
+function hitDedupeKey(layerId: string, feature: GeoJSON.Feature): string {
+  const props = propsFromFeature(feature);
+  const ref = String(props.ptf_ref ?? "").trim();
+  const id = feature.id ?? props.ptf_id ?? "";
+  return `${layerId}:${ref}:${id}`;
 }
 
 function collectHitsFromRendered(
@@ -176,20 +288,33 @@ function collectHitsFromRendered(
   const seen = new Set<string>();
   for (const f of rendered) {
     const layerId = f.layer?.id;
-    if (!layerId || seen.has(layerId)) continue;
-    seen.add(layerId);
-    out.push({ feature: f as unknown as GeoJSON.Feature, layerId });
+    if (!layerId) continue;
+    const feature = f as unknown as GeoJSON.Feature;
+    const key = hitDedupeKey(layerId, feature);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ feature, layerId });
   }
   return out;
 }
 
-/** Point-only pick for clicks — icons/markers/lines under the cursor, not nearby geometry. */
 function pickFeaturesAtClick(
   map: maplibregl.Map,
   point: maplibregl.Point
 ): Array<{ feature: GeoJSON.Feature; layerId: string }> {
   const layers = interactiveLayerIds().filter((id) => map.getLayer(id));
-  const rendered = map.queryRenderedFeatures(point, { layers });
+  const zoom = map.getZoom();
+  const r = zoom < COLOCATED_PICK_MAX_ZOOM ? COLOCATED_PICK_BOX_PX : 0;
+  const rendered =
+    r > 0
+      ? map.queryRenderedFeatures(
+          [
+            [point.x - r, point.y - r],
+            [point.x + r, point.y + r],
+          ],
+          { layers }
+        )
+      : map.queryRenderedFeatures(point, { layers });
   return collectHitsFromRendered(rendered);
 }
 
@@ -220,29 +345,45 @@ export function bindMapInteractions(map: maplibregl.Map): void {
       return catId && isColocatedPopupLayer(catId);
     });
 
-    if (pointHits.length >= 2) {
-      const members = pointHits.map((h) =>
+    const members = uniquePlatformMembers(
+      pointHits.map((h) =>
         memberFromPlatformAttributes(
           categoryIdFromMapLayer(h.layerId)!,
           propsFromFeature(h.feature)
         )
-      );
-      const attrsByLayer = new Map<string, Record<string, unknown>>();
-      for (const h of pointHits) {
-        const id = categoryIdFromMapLayer(h.layerId)!;
-        attrsByLayer.set(id, propsFromFeature(h.feature));
+      )
+    );
+    if (
+      members.length >= 2 &&
+      colocatedHitsOverlapOnScreen(map, pointHits, e.lngLat)
+    ) {
+      const pages = pagesFromColocatedHits(pointHits);
+      if (pages.length >= 2) {
+        const lead = pointHits[0]!;
+        const anchor = featureAnchorLngLat(lead.feature, e.lngLat);
+        showMapPopupPages({
+          map,
+          lngLat: anchor,
+          pages,
+          ...selectionHighlightForFeature(
+            lead.feature,
+            categoryForLayerId(lead.layerId)
+          ),
+        });
+        return;
       }
-      const anchor = featureAnchorLngLat(pointHits[0]!.feature, e.lngLat);
-      showMapPopupPages({
-        map,
-        lngLat: anchor,
-        pages: pagesFromColocatedMembers(members, attrsByLayer),
-      });
-      return;
     }
 
-    const top = pointHits[0] ?? hits[0]!;
-    const anchor = featureAnchorLngLat(top.feature, e.lngLat);
-    void popupForFeature(map, top.feature, top.layerId, anchor);
+    const top = pointHits[0] ?? hits[0];
+    if (!top) {
+      closeMapPopup();
+      return;
+    }
+    void popupForFeature(
+      map,
+      top.feature,
+      top.layerId,
+      featureAnchorLngLat(top.feature, e.lngLat)
+    );
   });
 }

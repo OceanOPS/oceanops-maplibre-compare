@@ -26,6 +26,14 @@ let pageCleanup: (() => void) | null = null;
 let pages: MapPopupPage[] = [];
 let pageIndex = 0;
 let popupMap: maplibregl.Map | null = null;
+let leaderSvg: SVGSVGElement | null = null;
+let leaderLine: SVGLineElement | null = null;
+let popupLngLat: { lng: number; lat: number } | null = null;
+let popupHighlightStyle: MapSelectionStyle = "marker";
+let popupHighlightFeature: GeoJSON.Feature | undefined;
+
+/** How the map emphasizes the selected platform under the popup. */
+export type MapSelectionStyle = "marker" | "line" | "leader";
 
 function ensureHost(map: maplibregl.Map): HTMLDivElement {
   const container = map.getContainer();
@@ -34,6 +42,9 @@ function ensureHost(map: maplibregl.Map): HTMLDivElement {
     host.className = "o-maplibre-popup-host";
     host.hidden = true;
     host.innerHTML = `
+    <svg class="o-maplibre-popup__leader" aria-hidden="true" hidden>
+      <line />
+    </svg>
     <div class="o-maplibre-popup" role="dialog" aria-modal="false">
       <header class="o-maplibre-popup__header">
         <h2 class="o-maplibre-popup__title"></h2>
@@ -54,6 +65,8 @@ function ensureHost(map: maplibregl.Map): HTMLDivElement {
     prevBtn = host.querySelector(".o-maplibre-popup__nav-btn--prev")!;
     nextBtn = host.querySelector(".o-maplibre-popup__nav-btn--next")!;
     statusEl = host.querySelector(".o-maplibre-popup__nav-status")!;
+    leaderSvg = host.querySelector(".o-maplibre-popup__leader");
+    leaderLine = leaderSvg?.querySelector("line") ?? null;
     host.querySelector(".o-maplibre-popup__close")!.addEventListener("click", () => {
       closeMapPopup();
     });
@@ -71,12 +84,18 @@ function renderPage(): void {
 
   const multi = pages.length > 1;
   navEl.hidden = !multi;
+  navEl.style.display = multi ? "" : "none";
   shellEl?.classList.toggle("o-maplibre-popup--paged", multi);
 
   if (multi) {
     statusEl.textContent = `${pageIndex + 1} of ${pages.length}`;
     prevBtn.disabled = pageIndex <= 0;
     nextBtn.disabled = pageIndex >= pages.length - 1;
+  }
+
+  if (popupMap && popupLngLat) {
+    const ll = popupLngLat;
+    requestAnimationFrame(() => updatePopupLeader(popupMap!, ll));
   }
 }
 
@@ -123,6 +142,24 @@ function bindPagination(): void {
   };
 }
 
+function updatePopupLeader(map: maplibregl.Map, lngLat: { lng: number; lat: number }): void {
+  if (!leaderSvg || !leaderLine || !shellEl || !host) return;
+  if (popupHighlightStyle !== "leader") {
+    leaderSvg.setAttribute("hidden", "");
+    return;
+  }
+  const anchor = map.project(lngLat);
+  const shell = shellEl.getBoundingClientRect();
+  const hostRect = host.getBoundingClientRect();
+  const x1 = shell.left + shell.width / 2 - hostRect.left;
+  const y1 = shell.bottom - hostRect.top;
+  leaderLine.setAttribute("x1", String(x1));
+  leaderLine.setAttribute("y1", String(y1));
+  leaderLine.setAttribute("x2", String(anchor.x));
+  leaderLine.setAttribute("y2", String(anchor.y));
+  leaderSvg.removeAttribute("hidden");
+}
+
 export function closeMapPopup(): void {
   moveCleanup?.();
   moveCleanup = null;
@@ -130,6 +167,10 @@ export function closeMapPopup(): void {
   pageCleanup = null;
   pages = [];
   pageIndex = 0;
+  popupLngLat = null;
+  popupHighlightFeature = undefined;
+  popupHighlightStyle = "marker";
+  if (leaderSvg) leaderSvg.setAttribute("hidden", "");
   if (popupMap) clearSelectionHighlight(popupMap);
   popupMap = null;
   if (host) host.hidden = true;
@@ -154,6 +195,9 @@ export function showMapPopupPages(options: {
   map: maplibregl.Map;
   /** Pan/zoom to the marker when opening (default true; search flies first). */
   focusOnOpen?: boolean;
+  /** Marker ring (points), track line (line layers), or popup leader (ship sprites). */
+  highlightStyle?: MapSelectionStyle;
+  highlightFeature?: GeoJSON.Feature;
 }): void {
   if (options.pages.length === 0) return;
 
@@ -161,10 +205,25 @@ export function showMapPopupPages(options: {
   closeMapPopup();
   ensureHost(map);
   popupMap = map;
+  popupLngLat = lngLat;
+  popupHighlightStyle = options.highlightStyle ?? "marker";
+  popupHighlightFeature = options.highlightFeature;
+
   if (options.focusOnOpen !== false) {
     focusMapOnLngLat(map, lngLat);
   }
-  setSelectionHighlight(map, lngLat);
+
+  const mapHighlightStyle =
+    popupHighlightStyle === "line"
+      ? "line"
+      : popupHighlightStyle === "leader"
+        ? "none"
+        : "marker";
+  setSelectionHighlight(map, {
+    lngLat,
+    style: mapHighlightStyle,
+    feature: popupHighlightFeature,
+  });
 
   pages = options.pages;
   pageIndex = 0;
@@ -175,6 +234,7 @@ export function showMapPopupPages(options: {
     const p = map.project(lngLat);
     shellEl!.style.left = `${p.x}px`;
     shellEl!.style.top = `${p.y}px`;
+    updatePopupLeader(map, lngLat);
   };
   place();
   host!.hidden = false;
