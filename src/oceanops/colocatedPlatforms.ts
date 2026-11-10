@@ -40,7 +40,7 @@ export function isColocatedPopupLayer(
 ): layerId is string {
   if (!layerId || layerId === MOORING_STACK_LAYER_ID) return false;
   const cat = categories.find((entry) => entry.id === layerId);
-  return cat != null && cat.type === "point";
+  return cat != null && cat.type !== "line";
 }
 
 export function memberFromPlatformAttributes(

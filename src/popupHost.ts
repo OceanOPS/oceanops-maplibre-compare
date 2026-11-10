@@ -195,7 +195,7 @@ export function showMapPopupPages(options: {
   map: maplibregl.Map;
   /** Pan/zoom to the marker when opening (default true; search flies first). */
   focusOnOpen?: boolean;
-  /** Marker ring (points), track line (line layers), or popup leader (ship sprites). */
+  /** Marker ring (all point/image markers) or track line (line layers only). */
   highlightStyle?: MapSelectionStyle;
   highlightFeature?: GeoJSON.Feature;
 }): void {

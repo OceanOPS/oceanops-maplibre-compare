@@ -107,6 +107,8 @@ function pagesFromColocatedHits(
 /** Low zoom: widen pick so stacked ship icons register together. */
 const COLOCATED_PICK_MAX_ZOOM = 5.75;
 const COLOCATED_PICK_BOX_PX = 14;
+/** Catch ship-on-buoy stacks when zoomed in (mixed symbol sizes). */
+const COLOCATED_PICK_MIN_PX = 12;
 /** Paginate only when anchor pixels still overlap (dezoomed stack). */
 const COLOCATED_MERGE_MAX_SCREEN_PX = 20;
 
@@ -139,7 +141,6 @@ function mapSelectionStyleForCategory(
 ): MapSelectionStyle {
   if (!cat) return "marker";
   if (cat.type === "line") return "line";
-  if (cat.type === "image") return "leader";
   return "marker";
 }
 
@@ -304,7 +305,8 @@ function pickFeaturesAtClick(
 ): Array<{ feature: GeoJSON.Feature; layerId: string }> {
   const layers = interactiveLayerIds().filter((id) => map.getLayer(id));
   const zoom = map.getZoom();
-  const r = zoom < COLOCATED_PICK_MAX_ZOOM ? COLOCATED_PICK_BOX_PX : 0;
+  const r =
+    zoom < COLOCATED_PICK_MAX_ZOOM ? COLOCATED_PICK_BOX_PX : COLOCATED_PICK_MIN_PX;
   const rendered =
     r > 0
       ? map.queryRenderedFeatures(
